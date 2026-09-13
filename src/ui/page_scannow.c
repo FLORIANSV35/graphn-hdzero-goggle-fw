@@ -369,12 +369,58 @@ static void analog_scan_restore_external(void) {
     scan_note_set_default();
 }
 
+// True when the open results contain something only the Built-in receiver can
+// tune.
+static bool analog_results_present(void) {
+    for (size_t i = 0; i < auto_result_count; i++) {
+        if (auto_results[i].protocol == PROTOCOL_ANALOG)
+            return true;
+    }
+    return false;
+}
+
+// True while picking an analog result would switch the goggle to the Built-in
+// module for good: either a borrow is in flight (fresh scan), or the user is
+// still on Expansion and the open results carry an analog entry ("Choose from
+// Last Scan", which re-opens results without re-running the scan).
+static bool analog_scan_commit_pending(void) {
+    if (!analog_results_present())
+        return false;
+    return analog_scan_borrowed_internal ||
+           g_setting.source.analog_module == SETTING_SOURCES_ANALOG_MODULE_EXTERNAL;
+}
+
+// Warn before the user commits. Shown on a fresh scan's results, and again when
+// "Choose from Last Scan" re-opens results containing analog entries -- that
+// path never ran a scan, so it never showed the scanning note either.
+static void analog_scan_note_results(void) {
+    if (label2 && analog_scan_commit_pending())
+        lv_label_set_text(label2,
+                          _lang("Scanned on the Built-in module. Choosing a channel switches to it "
+                                "and leaves the Expansion module off until you re-select it in "
+                                "Source. Back out and nothing changes."));
+}
+
 // Keep the Built-in receiver for real: the user picked a channel only it can
-// tune, so persist the switch and tell them how to get the Expansion module
-// back.
+// tune, so make sure it is selected and persist that.
+//
+// Deliberately NOT guarded on the borrow flag. "Choose from Last Scan" re-opens
+// results without re-running the scan, so no borrow is in flight when the user
+// picks from them -- and that pick needs the Built-in receiver just as much as
+// a fresh one. Keying this off the borrow used to drop such a pick back onto
+// the Expansion module, still tuned wherever its own controls had it.
 static void analog_scan_commit_internal(void) {
-    if (!analog_scan_borrowed_internal) return;
+    bool const borrowed = analog_scan_borrowed_internal;
     analog_scan_borrowed_internal = false;
+
+    if (!borrowed) {
+        // Already on the Built-in module: selected and persisted, nothing to do.
+        if (g_setting.source.analog_module != SETTING_SOURCES_ANALOG_MODULE_EXTERNAL)
+            return;
+        // Picked from re-opened results while still on Expansion.
+        g_setting.source.analog_module = SETTING_SOURCES_ANALOG_MODULE_INTERNAL;
+        Analog_Module_Power(1); // Expansion off
+    }
     ini_putl("source", "analog_module",
              g_setting.source.analog_module, SETTING_INI);
     scan_note_set_default();
@@ -1142,13 +1188,9 @@ static void start_scan_in_current_mode(void) {
     set_results_widget_visibility();
     lv_label_set_text(label, _lang("Scanning Done"));
 #if defined(HDZGOGGLE2)
-    // The user is now choosing whether to commit the borrow, so spell out what
-    // picking a channel costs -- and that leaving costs nothing.
-    if (analog_scan_borrowed_internal && label2)
-        lv_label_set_text(label2,
-                          _lang("Scanned on the Built-in module. Choosing a channel switches to it "
-                                "and leaves the Expansion module off until you re-select it in "
-                                "Source. Back out and nothing changes."));
+    // The user is now choosing whether to commit, so spell out what picking a
+    // channel costs -- and that leaving costs nothing.
+    analog_scan_note_results();
 #endif
 }
 #endif
@@ -1217,6 +1259,7 @@ static bool page_scannow_on_back(void) {
 #endif
 #if defined(HDZGOGGLE2)
         analog_scan_restore_external(); // backed out of the results, nothing changed
+        scan_note_set_default();        // also drops a last-scan warning (no borrow to restore)
 #endif
         page_state = SCAN_PAGE_IDLE;
         // Keep the results list on screen -- just de-green the selected row --
@@ -1244,6 +1287,7 @@ static void page_scannow_exit() {
     }
 #if defined(HDZGOGGLE2)
     analog_scan_restore_external(); // left the page without picking
+    scan_note_set_default();        // also drops a last-scan warning
 #endif
     page_state = SCAN_PAGE_IDLE;
     results_receiver_parked = false; // other pages may retune the receiver
@@ -1337,6 +1381,9 @@ static void page_scannow_on_click(uint8_t key, int sel) {
                 page_state = SCAN_PAGE_RESULTS;
                 set_results_widget_visibility();
                 lv_label_set_text(label, _lang("Last scan"));
+#if defined(HDZGOGGLE2)
+                analog_scan_note_results();
+#endif
             }
             return;
         }
