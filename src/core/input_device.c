@@ -263,6 +263,25 @@ void tune_channel(uint8_t action) {
     }
 #endif
 
+#if defined(HDZGOGGLE2)
+    // There is nothing to tune while the Expansion module is the live analog
+    // receiver: it is tuned by its own controls and the goggle can only power
+    // it. Refuse here, at the single entry point, so no caller can walk a
+    // phantom channel -- previewing it, storing it, stopping the DVR and
+    // writing SPI to the powered-down Built-in receiver -- without ever
+    // changing what the pilot sees. Dual always drives the Built-in receiver,
+    // so it tunes normally.
+    //
+    // tune_timer/tune_state therefore never leave idle on the Expansion
+    // module, so a click or long press falls through to its button callback
+    // (the menu) exactly as it does on any other untunable source.
+    if (g_source_info.source == SOURCE_AV_MODULE &&
+        g_setting.source.analog_module == SETTING_SOURCES_ANALOG_MODULE_EXTERNAL &&
+        !g_setting.source.auto_protocol_detect) {
+        return;
+    }
+#endif
+
     LOGI("tune_channel:%d", action);
 
 #if defined(HDZBOXPRO) || defined(HDZGOGGLE2)
@@ -535,7 +554,7 @@ void tune_channel_confirm() {
 #elif defined HDZGOGGLE2
     if (g_source_info.source == SOURCE_HDZERO) {
         tune_channel(DIAL_KEY_CLICK);
-    } else if (g_source_info.source == SOURCE_AV_MODULE && g_setting.source.analog_module == SETTING_SOURCES_ANALOG_MODULE_INTERNAL) {
+    } else if (g_source_info.source == SOURCE_AV_MODULE) {
         tune_channel(DIAL_KEY_CLICK);
     }
 #endif
@@ -622,8 +641,6 @@ void btn_press(void) // long press left key
             if (g_source_info.source == SOURCE_HDZERO) {
                 tune_channel(DIAL_KEY_PRESS);
             } else if (g_source_info.source == SOURCE_AV_MODULE) {
-                tune_channel(DIAL_KEY_PRESS);
-            } else if (g_source_info.source == SOURCE_AV_MODULE && g_setting.source.analog_module == SETTING_SOURCES_ANALOG_MODULE_INTERNAL) {
                 tune_channel(DIAL_KEY_PRESS);
             } else {
                 (*btn_press_callback)();
