@@ -73,6 +73,7 @@ int user_select_index = 0;
 static int auto_scaned_cnt = 0;
 static lv_obj_t *progressbar;
 static lv_obj_t *label;
+static lv_obj_t *label2; // wrapping hint/note under the scanner
 static lv_coord_t col_dsc1[] = {UI_SCANNOW_SCANNER_COLS};
 static lv_coord_t row_dsc1[] = {UI_SCANNOW_SCANNER_ROWS};
 static lv_coord_t col_dsc2[] = {UI_SCANNOW_SIGNAL_COLS};
@@ -315,6 +316,71 @@ static void style_auto_list_row(lv_obj_t *btn, bool is_focused) {
     }
 }
 
+// The hint under the scanner. Factored out because the Expansion-module note
+// below replaces it and has to be able to put it back.
+static void scan_note_set_default(void) {
+    if (!label2) return;
+#if SCAN_MODE_COUNT > 1
+    lv_label_set_text(label2, _lang("Dial to pick mode, press Enter to scan"));
+#else
+    // G1 scans on page entry; this note only shows in the picker, where the
+    // choice is Rescan vs Choose from Last Scan.
+    lv_label_set_text(label2, _lang("Dial to pick, press Enter to select"));
+#endif
+}
+
+#if defined(HDZGOGGLE2)
+// Scanning analog always runs on the Built-in receiver -- there is no way to
+// scan through the Expansion module, which is tuned by its own controls. The
+// two share the bay's analog input, so a scan with the Expansion module still
+// powered would sample a contended input.
+//
+// So the scan borrows the Built-in receiver: analog_module is switched to
+// Built-in in memory only, which powers the Expansion module down and makes
+// every consumer of that setting (app_switch_to_analog, the channel OSD, the
+// dial guard) behave correctly for the duration. Nothing is written to
+// settings.ini, so backing out -- or finding nothing -- restores the Expansion
+// module exactly as it was, with no setting for the user to put back.
+//
+// The borrow only becomes permanent when the user actually selects an analog
+// result outside Dual, because that session really does run on the Built-in
+// receiver. Then it is persisted, and the Expansion module stays off until the
+// user re-selects it on the Source page.
+static bool analog_scan_borrowed_internal;
+
+static void analog_scan_borrow_internal(void) {
+    if (analog_scan_borrowed_internal) return;
+    if (g_setting.source.analog_module != SETTING_SOURCES_ANALOG_MODULE_EXTERNAL) return;
+    analog_scan_borrowed_internal = true;
+    g_setting.source.analog_module = SETTING_SOURCES_ANALOG_MODULE_INTERNAL; // in memory only
+    Analog_Module_Power(1);                                                  // Expansion off
+    if (label2)
+        lv_label_set_text(label2,
+                          _lang("Scanning on the Built-in module. The Expansion module is off while this runs."));
+}
+
+// Hand the bay back to the Expansion module. The setting was never written, so
+// this is a pure restore -- the user has nothing to re-toggle.
+static void analog_scan_restore_external(void) {
+    if (!analog_scan_borrowed_internal) return;
+    analog_scan_borrowed_internal = false;
+    g_setting.source.analog_module = SETTING_SOURCES_ANALOG_MODULE_EXTERNAL;
+    Analog_Module_Power(1);
+    scan_note_set_default();
+}
+
+// Keep the Built-in receiver for real: the user picked a channel only it can
+// tune, so persist the switch and tell them how to get the Expansion module
+// back.
+static void analog_scan_commit_internal(void) {
+    if (!analog_scan_borrowed_internal) return;
+    analog_scan_borrowed_internal = false;
+    ini_putl("source", "analog_module",
+             g_setting.source.analog_module, SETTING_INI);
+    scan_note_set_default();
+}
+#endif
+
 static void set_results_widget_visibility(void) {
     // All three modes (HDZero, Analog, Auto/Both) now render into auto_list,
     // so the legacy signal-bar grid stays hidden. The list stays on screen
@@ -453,17 +519,8 @@ static lv_obj_t *page_scannow_create(lv_obj_t *parent, panel_arr_t *arr) {
     lv_obj_set_grid_cell(label, LV_GRID_ALIGN_START, 0, 1,
                          LV_GRID_ALIGN_CENTER, 0, 1);
 
-    lv_obj_t *label2 = lv_label_create(cont1);
-#if SCAN_MODE_COUNT > 1
-    snprintf(buf, sizeof(buf), "%s",
-             _lang("Dial to pick mode, press Enter to scan"));
-#else
-    // G1 scans on page entry; this note only shows in the picker, where the
-    // choice is Rescan vs Choose from Last Scan.
-    snprintf(buf, sizeof(buf), "%s",
-             _lang("Dial to pick, press Enter to select"));
-#endif
-    lv_label_set_text(label2, buf);
+    label2 = lv_label_create(cont1);
+    scan_note_set_default();
     lv_obj_set_style_text_font(label2, UI_SCANNOW_NOTE_FONT, 0);
     lv_obj_set_style_text_align(label2, LV_TEXT_ALIGN_LEFT, 0);
     lv_obj_set_style_text_color(label2, lv_color_hex(TEXT_COLOR_DEFAULT), 0);
@@ -813,6 +870,10 @@ static int8_t scan_now_analog(void) {
     bool valid;
     auto_result_count = 0;
 
+#if defined(HDZGOGGLE2)
+    analog_scan_borrow_internal();
+#endif
+
     snprintf(buf, sizeof(buf), "%s...", _lang("Scanning"));
     lv_label_set_text(label, buf);
     lv_bar_set_range(progressbar, 0, 48);
@@ -902,6 +963,13 @@ static int8_t scan_now_auto(void) {
 
     uint8_t bws[2];
     int nbw = scan_hdz_bw_list(bws); // 1, or 2 when BW=Both
+
+#if defined(HDZGOGGLE2)
+    // The Auto/Both scan runs an analog pass too, so it needs the bay just as
+    // much. Its picks turn Dual on, which drives the Built-in receiver on its
+    // own, so the borrow is released rather than committed on the way out.
+    analog_scan_borrow_internal();
+#endif
 
     rtc6715.init(1, 0);
     scan_core_notify_analog_powered_on();
@@ -1061,6 +1129,9 @@ static void start_scan_in_current_mode(void) {
             rtc6715.init(0, 0); // same analog RX teardown as leaving RESULTS
         }
 #endif
+#if defined(HDZGOGGLE2)
+        analog_scan_restore_external(); // nothing picked, nothing changed
+#endif
         page_state = SCAN_PAGE_IDLE;
         set_results_widget_visibility();
         update_mode_btn_focus();
@@ -1070,6 +1141,15 @@ static void start_scan_in_current_mode(void) {
     page_state = SCAN_PAGE_RESULTS;
     set_results_widget_visibility();
     lv_label_set_text(label, _lang("Scanning Done"));
+#if defined(HDZGOGGLE2)
+    // The user is now choosing whether to commit the borrow, so spell out what
+    // picking a channel costs -- and that leaving costs nothing.
+    if (analog_scan_borrowed_internal && label2)
+        lv_label_set_text(label2,
+                          _lang("Scanned on the Built-in module. Choosing a channel switches to it "
+                                "and leaves the Expansion module off until you re-select it in "
+                                "Source. Back out and nothing changes."));
+#endif
 }
 #endif
 
@@ -1135,6 +1215,9 @@ static bool page_scannow_on_back(void) {
             rtc6715.init(0, 0);
         }
 #endif
+#if defined(HDZGOGGLE2)
+        analog_scan_restore_external(); // backed out of the results, nothing changed
+#endif
         page_state = SCAN_PAGE_IDLE;
         // Keep the results list on screen -- just de-green the selected row --
         // so the channels stay visible from the picker; "Choose from Last
@@ -1159,6 +1242,9 @@ static void page_scannow_exit() {
         (scan_mode == SCAN_MODE_ANALOG || scan_mode == SCAN_MODE_AUTO)) {
         rtc6715.init(0, 0); // power down analog RX on exit
     }
+#if defined(HDZGOGGLE2)
+    analog_scan_restore_external(); // left the page without picking
+#endif
     page_state = SCAN_PAGE_IDLE;
     results_receiver_parked = false; // other pages may retune the receiver
     // Drop focus and grey the picker, but leave the results list on screen so
@@ -1270,6 +1356,17 @@ static void page_scannow_on_click(uint8_t key, int sel) {
     {
         if (auto_result_count == 0) return;
         const auto_result_t *res = &auto_results[auto_select_index];
+#if defined(HDZGOGGLE2)
+        // Settle the borrowed Built-in receiver before entering video. Keep it
+        // only for an analog pick outside Dual -- that session genuinely runs
+        // on the Built-in module. An HDZ pick does not use the bay at all, and
+        // a Dual pick powers the Expansion module down on its own without
+        // needing the setting changed, so both hand it back.
+        if (res->protocol == PROTOCOL_ANALOG && !g_setting.source.auto_protocol_detect)
+            analog_scan_commit_internal();
+        else
+            analog_scan_restore_external();
+#endif
         // Picks from a fresh scan are near-instant (receiver parked on the
         // focused result). Re-opened "Choose from Last Scan" results have to
         // retune/reopen from scratch -- show the loading bar so the wait

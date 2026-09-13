@@ -204,6 +204,20 @@ static void change_channel_analog(uint8_t const channel) {
         LOGE("Invalid analog channel %d", channel);
         return;
     }
+#if defined(HDZGOGGLE2)
+    // The Expansion module is tuned by its own controls; the goggle can only
+    // power it (Analog_Module_Power), so there is no channel to apply here.
+    // Going ahead anyway stored a channel the receiver never tunes to -- which
+    // the channel OSD then displayed as fact -- and the source re-switch below
+    // stopped the DVR and blipped the video for a change that never happened.
+    // Dual (auto_protocol_detect) always drives the Built-in receiver, so it
+    // still applies normally.
+    if (g_setting.source.analog_module == SETTING_SOURCES_ANALOG_MODULE_EXTERNAL &&
+        !g_setting.source.auto_protocol_detect) {
+        LOGI("Ignoring analog channel %d: Expansion module has no channel control", channel);
+        return;
+    }
+#endif
     if (g_setting.source.analog_channel != channel || g_app_state != APP_STATE_VIDEO) {
         g_setting.source.analog_channel = channel;
         ini_putl("source", "analog_channel", g_setting.source.analog_channel, SETTING_INI);
