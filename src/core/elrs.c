@@ -640,9 +640,6 @@ bool elrs_headtracking_enabled() {
 }
 
 bool msp_channel_update() {
-    // Channel 1...20 for R1...8, E1, F1, F2 and F4, L1...8
-    uint8_t const ch = g_setting.scan.channel;
-    uint8_t const band = g_setting.source.hdzero_band;
     uint8_t chan;
 
     // This is the final authority check: no UI, dial path, or assignable
@@ -650,23 +647,40 @@ bool msp_channel_update() {
     if (!g_setting.elrs.enable || !g_setting.elrs.vtx_send_enable)
         return false;
 
-    if (ch == 0 || ch > HDZERO_CHANNEL_NUM)
-        return false; // Invalid value -> ignore
-    if (band == SETTING_SOURCES_HDZERO_BAND_RACEBAND) {
-        if (ch <= 8) {
-            chan = ch - 1 + (4 * 8); // Map R1..8
-        } else if (ch == 9) {
-            chan = 2 * 8; // Map E1
-        } else if (ch == 10) {
-            chan = 3 * 8; // Map F1
-        } else if (ch == 11) {
-            chan = 3 * 8 + 1; // Map F2
-        } else if (ch == 12) {
-            chan = 3 * 8 + 3; // Map F4
-        }
+    if (g_source_info.source == SOURCE_AV_MODULE) {
+        // Analog. analog_channel is already a 1-based index into the same
+        // 48-entry band table the backpack speaks, so it maps straight across
+        // -- this is how MSP_GET_BAND_CHAN reports the analog source too.
+        //
+        // Sending the stored HDZero channel from here instead (what every
+        // caller used to get, including the analog dial confirm) retuned the
+        // VTX to an unrelated frequency while the goggle stayed on analog, so
+        // the pilot's video simply went away.
+        uint8_t const ch = g_setting.source.analog_channel;
+        if (ch == 0 || ch > ANALOG_CHANNEL_NUM)
+            return false; // Invalid value -> ignore
+#if defined(HDZGOGGLE2)
+        // The Expansion module is tuned by its own controls, so analog_channel
+        // says nothing about what is actually being received. Transmitting it
+        // would move the pilot's VTX to a channel picked out of a stale
+        // setting; send nothing instead. Dual always drives the Built-in
+        // receiver, so its channel is real.
+        if (g_setting.source.analog_module == SETTING_SOURCES_ANALOG_MODULE_EXTERNAL &&
+            !g_setting.source.auto_protocol_detect)
+            return false;
+#endif
+        chan = ch - 1;
     } else {
-        chan = ch - 1 + 5 * 8; // Map L1..8
+        // HDZero -- and every other source, which keeps the previous
+        // behaviour of sending the goggle's stored HDZero channel (the "Send
+        // VTX freq" item stays useful from HDMI In / AV In).
+        // Channel 1...20 for R1...8, E1, F1, F2 and F4, L1...8
+        uint8_t const ch = g_setting.scan.channel;
+        if (ch == 0 || ch > HDZERO_CHANNEL_NUM)
+            return false; // Invalid value -> ignore
+        chan = hdz_ch2index(g_setting.source.hdzero_band, ch);
     }
+
     msp_send_packet(MSP_SET_BAND_CHAN, MSP_PACKET_COMMAND, sizeof(chan), &chan);
     LOGI("MSPv2 MSP_SET_BAND_CHAN %d sent", chan);
     return true;
