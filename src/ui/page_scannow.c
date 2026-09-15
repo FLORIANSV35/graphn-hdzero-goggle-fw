@@ -103,6 +103,9 @@ typedef enum {
 } scan_page_state_t;
 
 static scan_mode_t scan_mode = SCAN_MODE_HDZERO;
+// Mode that produced auto_results. The picker can move scan_mode while the
+// results remain available, so keep their source choice with them.
+static scan_mode_t results_mode = SCAN_MODE_HDZERO;
 static scan_page_state_t page_state = SCAN_PAGE_IDLE;
 static lv_obj_t *mode_btns[3];     // 0=HDZero, 1=Analog, 2=Auto/Both
 static bool page_focused = false;  // true only while the page holds input focus;
@@ -1184,6 +1187,7 @@ static void start_scan_in_current_mode(void) {
         lv_label_set_text(label, _lang("Scanning Done. No Signals Found."));
         return;
     }
+    results_mode = scan_mode;
     page_state = SCAN_PAGE_RESULTS;
     set_results_widget_visibility();
     lv_label_set_text(label, _lang("Scanning Done"));
@@ -1377,6 +1381,7 @@ static void page_scannow_on_click(uint8_t key, int sel) {
         if (idle_sel == SCAN_MODE_COUNT) {
             // "Choose from Last Scan": re-show the persisted results, no rescan.
             if (auto_result_count > 0) {
+                scan_mode = results_mode;
                 render_auto_results_list();
                 page_state = SCAN_PAGE_RESULTS;
                 set_results_widget_visibility();
