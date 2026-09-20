@@ -539,6 +539,7 @@ static void dvr_update_record_conf() {
     ini_putl("record", "audio", g_setting.record.audio, REC_CONF);
     dvr_select_audio_source(g_setting.record.audio_source);
     ini_putl("record", "naming", g_setting.record.naming, REC_CONF);
+    ini_putl("record", "rolling", g_setting.record.rolling ? 1 : 0, REC_CONF);
 
     // Only the ELRS naming scheme consumes race labels. Clear the pending
     // label when another scheme is selected so it cannot leak into a later
@@ -574,6 +575,10 @@ static void dvr_update_record_conf() {
                 g_setting.record.format_ts, want_type, got_type, type_retries);
 }
 
+bool dvr_space_allows_start(void) {
+    return g_setting.record.rolling || !sdcard_is_full();
+}
+
 void dvr_cmd(osd_dvr_cmd_t cmd) {
     LOGI("dvr_cmd: sdcard=%d, recording=%d, cmd=%d", g_sdcard_enable, dvr_is_recording, cmd);
 
@@ -599,7 +604,7 @@ void dvr_cmd(osd_dvr_cmd_t cmd) {
     pthread_mutex_lock(&dvr_mutex);
 
     if (start_rec) {
-        if (!dvr_is_recording && !sdcard_is_full()) {
+        if (!dvr_is_recording && dvr_space_allows_start()) {
             dvr_update_record_conf();
             // Re-assert the record-OSD bit at the exact point recording starts.
             // Display/UI transitions can reinitialize this FPGA register after

@@ -92,6 +92,18 @@ extern "C" {
 #define REC_packTypesNUM    2
 #define REC_starFORMAT      "%u:%02u star\n"
 
+// Rolling ("loop") recording. Reclaiming starts once free space falls below the
+// low mark and runs until the target is reached, both well above REC_diskFULL,
+// so the recorder never reaches the point where it would have to stop. The low
+// mark is also held at least REC_rollMARGIN above whatever disk-full value the
+// config carries, in case that was raised by hand.
+#define REC_rollLOWMB       512                 //MB, start reclaiming below this
+#define REC_rollTARGETMB    1024                //MB, reclaim until this much is free
+#define REC_rollMARGIN      256                 //MB, minimum headroom over disk-full
+#define REC_rollHEADROOM    512                 //MB, reclaimed on top of the low mark
+#define REC_rollMAXdelete   8                   //deletions per housekeeping tick
+#define REC_rollMAXscan     1000                //clips examined in one reclaim pass
+
 #define REC_filePathGet(BUFF, MAXLEN, PATH, PREFIX, INDEX, FILEFMT) \
     snprintf((BUFF), (MAXLEN), "%s%s%04d.%s", (PATH), (PREFIX), (INDEX), (FILEFMT));
 

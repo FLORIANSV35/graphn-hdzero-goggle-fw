@@ -16,6 +16,7 @@
 #include "jpegenc.h"
 #include "log.h"
 #include "record.h"
+#include "rolling.h"
 #include "version.h"
 #include "vi2venc_live.h"
 
@@ -125,6 +126,7 @@ void record_dumpParams(RecordParams_t *params) {
     LOGD("full: %d MB", params->minDiskSize);
     LOGD("duration: %d minutes", params->packDuration / (60 * 1000));
     LOGD("audio   : %s", params->enableAudio ? "yes" : "no");
+    LOGD("rolling : %s", params->rolling ? "yes" : "no");
     const char *naming = params->fileNaming == NAMING_DATE ? "Date" :
                          params->fileNaming == NAMING_ELRS ? "ELRS" : "Contiguous";
     LOGD("naming  : %s", naming);
@@ -788,6 +790,108 @@ int record_checkDisk(RecordContext_t *recCtx) {
     return 0;
 }
 
+static uint32_t record_rollingLowMB(const RecordParams_t *params) {
+    uint32_t const low = params->minDiskSize + REC_rollMARGIN;
+
+    return (low > REC_rollLOWMB) ? low : REC_rollLOWMB;
+}
+
+static uint32_t record_rollingTargetMB(uint32_t lowMB) {
+    uint32_t const target = lowMB + REC_rollHEADROOM;
+
+    return (target > REC_rollTARGETMB) ? target : REC_rollTARGETMB;
+}
+
+/* Name of the clip the muxer currently has open, or "" when none is.
+ *
+ * Read from the muxer rather than from NOW_RECORDING_FILE: that file is written
+ * once at record_start() and is not refreshed on a segment rollover, so after
+ * the first rollover it names a clip that is finished and reclaimable. */
+static void record_rollingCurrentClip(RecordContext_t *recCtx, char *out, size_t size) {
+    out[0] = '\0';
+
+    pthread_mutex_lock(&recCtx->mutex);
+    if (recCtx->ff != NULL && recCtx->ff->ofmtContext != NULL &&
+        recCtx->ff->ofmtContext->url != NULL) {
+        const char *url = recCtx->ff->ofmtContext->url;
+        const char *slash = strrchr(url, '/');
+        snprintf(out, size, "%s", slash ? slash + 1 : url);
+    }
+    pthread_mutex_unlock(&recCtx->mutex);
+}
+
+/* Rolling recording: hold free space above the low-water mark by removing the
+ * oldest clips, so the card never reaches the disk-full mark that stops a
+ * recording.
+ *
+ * Only ever runs while a recording is wanted. A full card that is merely sitting
+ * in the goggles -- being browsed in playback, say -- must not lose a single
+ * file. When there is nothing left to reclaim (every clip is a favourite, or the
+ * folder is empty) this does nothing and the recorder stops on a full card
+ * exactly as it does with rolling switched off. */
+static void record_rollingReclaim(RecordContext_t *recCtx) {
+    static RollingCandidate_t candidates[REC_rollMAXscan];
+    static bool reportedExhausted = false;
+
+    if (!recCtx->params.rolling || recCtx->stateGo != REC_statRun || !recCtx->sdstat.mounted) {
+        reportedExhausted = false;
+        return;
+    }
+
+    uint32_t const lowMB = record_rollingLowMB(&recCtx->params);
+    uint32_t availMB = disk_availableSize(recCtx->params.diskPath);
+    if (availMB >= lowMB) {
+        reportedExhausted = false;
+        return;
+    }
+
+    char keepName[ROLLING_NAME_MAX];
+    record_rollingCurrentClip(recCtx, keepName, sizeof(keepName));
+
+    int const count = rolling_scan(recCtx->params.packPath, keepName,
+                                   candidates, REC_rollMAXscan);
+    if (count == 0) {
+        if (!reportedExhausted) {
+            LOGE("rolling: %u MB free, nothing left to reclaim", availMB);
+            log_write(WARN, "rolling: %u MB free, nothing left to reclaim", availMB);
+            reportedExhausted = true;
+        }
+        return;
+    }
+    reportedExhausted = false;
+
+    uint32_t const targetMB = record_rollingTargetMB(lowMB);
+    bool reportedFailure = false;
+    int attempts = 0;
+    int deleted = 0;
+
+    /* Bounded by attempts rather than deletions so a card that has gone
+     * read-only cannot spin through a thousand failing unlinks -- and its log
+     * lines -- inside a single 500 ms tick while frames are being written. */
+    for (int i = 0; i < count && attempts < REC_rollMAXdelete && availMB < targetMB; i++) {
+        attempts++;
+        if (rolling_delete_clip(recCtx->params.packPath, candidates[i].name) != 0) {
+            if (!reportedFailure) {
+                LOGE("rolling: could not remove %s", candidates[i].name);
+                reportedFailure = true;
+            }
+            continue;
+        }
+
+        deleted++;
+        availMB = disk_availableSize(recCtx->params.diskPath);
+        LOGI("rolling: removed %s, %u MB free", candidates[i].name, availMB);
+        log_write(INFO, "rolling: removed %s, %u MB free", candidates[i].name, availMB);
+    }
+
+    if (deleted > 0) {
+        /* disk_sdstat() answers from a cache the poller thread refreshes only
+         * every ~490 ms. Publish the figure we just measured so record_run()
+         * cannot stop a recording over space that is already free again. */
+        recCtx->sdstat.full = (availMB < recCtx->params.minDiskSize);
+    }
+}
+
 void record_run(RecordContext_t *recCtx, RecordState_e stateGo) {
     if (recCtx->stateGo != stateGo) {
         recCtx->stateGo = stateGo;
@@ -987,6 +1091,7 @@ void main_loop(RecordContext_t *recCtx) {
         tkNow = get_tickCount();
         if (tkNow - tkIdle >= 500) {
             record_checkDisk(recCtx);
+            record_rollingReclaim(recCtx);
             record_saveStatus(recCtx, REC_statusSave);
             record_run(recCtx, recCtx->stateGo);
             record_pack(recCtx);
