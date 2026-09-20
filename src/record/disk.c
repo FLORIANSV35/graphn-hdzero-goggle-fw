@@ -176,8 +176,7 @@ bool disk_checkFile(char* sPath)
         return false;
 	}
 
-	stat(sPath, &st);
-	return S_ISREG(st.st_mode);
+	return stat(sPath, &st) == 0 && S_ISREG(st.st_mode);
 }
 
 uint32_t disk_availableSize(char* sPath)

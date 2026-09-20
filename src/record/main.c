@@ -988,17 +988,33 @@ void record_checkConf(RecordContext_t *recCtx, char *confSet) {
         return;
     }
 
-    char sTemp[MAX_pathLEN];
-    char *p = sTemp;
-    readlink("/proc/self/exe", sTemp, MAX_pathLEN);
-    if (NULL != (p = strrchr(sTemp, '/'))) {
+    char exePath[MAX_pathLEN] = "";
+    char appConf[MAX_pathLEN] = "";
+    char exeConf[MAX_pathLEN] = "";
+    ssize_t exeLen = readlink("/proc/self/exe", exePath, sizeof(exePath) - 1);
+    if (exeLen > 0 && exeLen < (ssize_t)sizeof(exePath)) {
+        exePath[exeLen] = '\0';
+        char *p = strrchr(exePath, '/');
+        if (p != NULL) {
+            int appDirLen = p - exePath;
+            int confLen = snprintf(appConf, sizeof(appConf), "%.*s%s",
+                                   appDirLen, exePath, REC_confPathFILE);
+            if (confLen < 0 || confLen >= (int)sizeof(appConf))
+                appConf[0] = '\0';
+
+            confLen = snprintf(exeConf, sizeof(exeConf), "%.*s/%s",
+                               appDirLen, exePath, REC_confFILE);
+            if (confLen < 0 || confLen >= (int)sizeof(exeConf))
+                exeConf[0] = '\0';
+        }
+    }
+
+    if (appConf[0] != '\0') {
         /* Prefer the app-owned config that the UI updates before every
          * recording. /data/confs/record.conf is a legacy installed copy and
          * can contain a stale container type. */
-        *p = '\0';
-        strcat(sTemp, REC_confPathFILE);
-        if (disk_checkFile(sTemp)) {
-            strcpy(recCtx->confFile, sTemp);
+        if (disk_checkFile(appConf)) {
+            strcpy(recCtx->confFile, appConf);
             return;
         }
     }
@@ -1006,19 +1022,16 @@ void record_checkConf(RecordContext_t *recCtx, char *confSet) {
     /* Legacy fallback for installations without an app-relative config. */
     if (disk_checkFile(REC_confDEFAULT)) {
         strcpy(recCtx->confFile, REC_confDEFAULT);
+        rec_dbg_log("config_select FALLBACK conf='%s' appConf='%s'",
+                    REC_confDEFAULT, appConf);
         return;
     }
 
-    memset(sTemp, 0, MAX_pathLEN);
-    readlink("/proc/self/exe", sTemp, MAX_pathLEN);
-    if (NULL != (p = strrchr(sTemp, '/'))) {
-        /* path where record is */
-        *p = '\0';
-        snprintf(recCtx->confFile, MAX_pathLEN, "%s/%s", sTemp, REC_confFILE);
-    }
+    if (exeConf[0] != '\0')
+        strcpy(recCtx->confFile, exeConf);
 }
 
-void main_loop(RecordContext_t *recCtx) {
+void main_loop(RecordContext_t *recCtx, bool retryLegacyConf) {
     bool isExit = false;
     uint32_t tkIdle = 0;
     uint32_t tkNow = 0;
@@ -1035,6 +1048,16 @@ void main_loop(RecordContext_t *recCtx) {
             break;
         case MSG_cmdSTART:
             if (!record_isGoing(recCtx->vv)) {
+                if (retryLegacyConf &&
+                    strcmp(recCtx->confFile, REC_confDEFAULT) == 0) {
+                    char previousConf[MAX_pathLEN];
+                    strcpy(previousConf, recCtx->confFile);
+                    record_checkConf(recCtx, NULL);
+                    if (strcmp(previousConf, recCtx->confFile) != 0) {
+                        rec_dbg_log("config_select retry old='%s' new='%s'",
+                                    previousConf, recCtx->confFile);
+                    }
+                }
                 conf_loadRecordParams(recCtx->confFile, &recCtx->params);
             } else {
                 rec_dbg_log("START while recording: skip reload, packType='%s'",
@@ -1158,7 +1181,7 @@ int main(int argc, char *argv[]) {
     recCtx.ao = ai2ao_initSys();
     avshare_init();
 
-    main_loop(&recCtx);
+    main_loop(&recCtx, argc <= 1);
 
 failed:
     LOGD("exit ...");
