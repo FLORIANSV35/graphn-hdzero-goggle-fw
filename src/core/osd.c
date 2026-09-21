@@ -548,17 +548,8 @@ void osd_channel_show(bool bShow) {
         } else {
 #if defined(HDZGOGGLE2) || defined(HDZBOXPRO)
             if (g_source_info.source == SOURCE_AV_MODULE) {
-#if defined(HDZGOGGLE2)
-                // The Expansion module is tuned by its own controls, so the
-                // stored analog channel says nothing about what it is actually
-                // receiving. Hide the tag rather than present a guess as fact;
-                // the analog RSSI bar is hidden here for the same reason. Dual
-                // always drives the Built-in receiver, so it keeps its tag.
-                if (g_setting.source.analog_module == SETTING_SOURCES_ANALOG_MODULE_EXTERNAL &&
-                    !g_setting.source.auto_protocol_detect) {
-                    bShow = false;
-                } else
-#endif
+                // Expansion module: analog_channel is the last channel seen by
+                // the backpack (received or sent), shown as such.
                 {
                     ch = g_setting.source.analog_channel & 0x7F;
                 }

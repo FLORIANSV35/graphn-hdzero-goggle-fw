@@ -263,24 +263,6 @@ void tune_channel(uint8_t action) {
     }
 #endif
 
-#if defined(HDZGOGGLE2)
-    // There is nothing to tune while the Expansion module is the live analog
-    // receiver: it is tuned by its own controls and the goggle can only power
-    // it. Refuse here, at the single entry point, so no caller can walk a
-    // phantom channel -- previewing it, storing it, stopping the DVR and
-    // writing SPI to the powered-down Built-in receiver -- without ever
-    // changing what the pilot sees. Dual always drives the Built-in receiver,
-    // so it tunes normally.
-    //
-    // tune_timer/tune_state therefore never leave idle on the Expansion
-    // module, so a click or long press falls through to its button callback
-    // (the menu) exactly as it does on any other untunable source.
-    if (g_source_info.source == SOURCE_AV_MODULE &&
-        g_setting.source.analog_module == SETTING_SOURCES_ANALOG_MODULE_EXTERNAL &&
-        !g_setting.source.auto_protocol_detect) {
-        return;
-    }
-#endif
 
     LOGI("tune_channel:%d", action);
 
@@ -500,8 +482,17 @@ void tune_channel(uint8_t action) {
             if (g_setting.source.analog_channel != channel) {
                 g_setting.source.analog_channel = channel;
                 ini_putl("source", "analog_channel", g_setting.source.analog_channel, SETTING_INI);
-                dvr_cmd(DVR_STOP);
-                rtc6715.set_ch(g_setting.source.analog_channel - 1);
+#if defined(HDZGOGGLE2)
+                // Expansion module: the dial only selects the frequency sent to
+                // the VTX through the ELRS backpack. The Built-in receiver is
+                // powered down and must not be tuned (nor the DVR interrupted).
+                if (!(g_setting.source.analog_module == SETTING_SOURCES_ANALOG_MODULE_EXTERNAL &&
+                      !g_setting.source.auto_protocol_detect))
+#endif
+                {
+                    dvr_cmd(DVR_STOP);
+                    rtc6715.set_ch(g_setting.source.analog_channel - 1);
+                }
                 bool const send_msp = action == DIAL_KEY_PRESS ||
                                       (action == DIAL_KEY_CLICK && g_setting.elrs.auto_send_vtx);
                 if (send_msp && msp_channel_update()) {
