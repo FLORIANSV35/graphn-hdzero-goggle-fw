@@ -42,8 +42,8 @@ enum {
     ROW_GOGGLE_COUNT
 };
 
-#define APP_VERSION_DISPLAY_PREFIX "ripples-"
-#define APP_VERSION_IDENTITY_SUFFIX "-ripples"
+#define APP_VERSION_DISPLAY_PREFIX "graphn-"
+#define APP_VERSION_IDENTITY_SUFFIX "-graphn"
 
 enum {
     ROW_BOXPRO_UPDATE_VTX = -1,
