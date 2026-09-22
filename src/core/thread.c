@@ -79,7 +79,7 @@ static void detect_sdcard(void) {
                 sdcard_init_scan = true;
             }
 
-            if (record_pending && g_sdcard_ready && !sdcard_is_full()) {
+            if (record_pending && g_sdcard_ready && dvr_space_allows_start()) {
                 dvr_cmd(DVR_START);
             }
 
@@ -214,7 +214,7 @@ static void check_source_signal(int vtmg_change) {
                 cnt = 0;
                 LOGI("Signal accquired");
                 sdcard_update_free_size();
-                if (!sdcard_is_full()) {
+                if (dvr_space_allows_start()) {
                     dvr_cmd(DVR_START);
                 }
             }
@@ -246,6 +246,14 @@ static void *thread_peripheral(void *ptr) {
                 g_temperature.right = nct_read_temperature(NCT_RIGHT);
 #endif
                 dvr_update_status();
+                // Keep the cached free-space figure current while a card is
+                // mounted: rolling recording holds the card near its low-water
+                // mark, and every other refresh site fires only on insertion or
+                // a format. Guarded, because statfs() on an unmounted /mnt/extsd
+                // would report the rootfs instead.
+                if (g_sdcard_enable) {
+                    sdcard_update_free_size();
+                }
             }
             // detect HDZERO
             record_vtmg_change = HDZERO_detect();
