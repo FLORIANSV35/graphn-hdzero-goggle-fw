@@ -49,6 +49,14 @@ static lv_coord_t row_dsc[] = {UI_PLAYBACK_ROWS};
 static media_db_t media_db;
 static pb_ui_item_t pb_ui[ITEMS_LAYOUT_CNT];
 
+static pb_month_entry_t month_list[MAX_MONTH_ENTRIES];
+static int month_count;
+static lv_obj_t *month_labels[UI_PLAYBACK_MONTHS_VISIBLE];
+static lv_obj_t *month_cursor;
+static void build_month_list(void);
+static void update_month_list_ui(void);
+static void update_month_cursor(void);
+
 /**
  * Displays the status message box.
  */
@@ -78,12 +86,12 @@ static lv_obj_t *page_playback_create(lv_obj_t *parent, panel_arr_t *arr) {
     char buf[128];
     lv_obj_t *page = lv_menu_page_create(parent, NULL);
     lv_obj_clear_flag(page, LV_OBJ_FLAG_SCROLLABLE);
-    lv_obj_set_size(page, UI_PAGE_VIEW_SIZE);
+    lv_obj_set_size(page, UI_PAGE_PLAYBACK_VIEW_SIZE);
     lv_obj_add_style(page, &style_subpage, LV_PART_MAIN);
 
     lv_obj_t *section = lv_menu_section_create(page);
     lv_obj_add_style(section, &style_submenu, LV_PART_MAIN);
-    lv_obj_set_size(section, UI_PAGE_VIEW_SIZE);
+    lv_obj_set_size(section, UI_PAGE_PLAYBACK_VIEW_SIZE);
 #if HDZBOXPRO
     lv_obj_set_style_pad_top(section, 68, 0);
 #endif
@@ -91,7 +99,7 @@ static lv_obj_t *page_playback_create(lv_obj_t *parent, panel_arr_t *arr) {
     create_text(NULL, section, false, buf, LV_MENU_ITEM_BUILDER_VARIANT_2);
 
     lv_obj_t *cont = lv_obj_create(section);
-    lv_obj_set_size(cont, UI_PAGE_VIEW_SIZE);
+    lv_obj_set_size(cont, UI_PAGE_PLAYBACK_VIEW_SIZE);
     lv_obj_clear_flag(cont, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_style(cont, &style_context, LV_PART_MAIN);
 #if defined(HDZGOGGLE) || defined(HDZGOGGLE2)
@@ -138,6 +146,26 @@ static lv_obj_t *page_playback_create(lv_obj_t *parent, panel_arr_t *arr) {
         lv_obj_set_pos(pb_ui[pos]._label, pb_ui[pos].x + (UI_PAGE_PLAYBACK_ITEM_PREVIEW_W >> 2) + ITEM_GAP_W,
                        pb_ui[pos].y + UI_PAGE_PLAYBACK_ITEM_PREVIEW_H + 10);
     }
+
+    // Month history strip: one "MM-YY" row per distinct month present on the
+    // card, most recent at the top (matches seq order, see build_month_list),
+    // with a cursor tracking whichever month the highlighted clip is in.
+    for (uint32_t i = 0; i < UI_PLAYBACK_MONTHS_VISIBLE; i++) {
+        month_labels[i] = lv_label_create(cont);
+        lv_obj_set_style_text_font(month_labels[i], UI_PLAYBACK_MONTHS_FONT, 0);
+        lv_obj_set_style_text_color(month_labels[i], lv_color_hex(TEXT_COLOR_DEFAULT), 0);
+        lv_obj_set_pos(month_labels[i], UI_PLAYBACK_MONTHS_X + 14, UI_PLAYBACK_MONTHS_Y + i * UI_PLAYBACK_MONTHS_ROW_H);
+        lv_obj_add_flag(month_labels[i], LV_OBJ_FLAG_HIDDEN);
+    }
+
+    month_cursor = lv_obj_create(cont);
+    lv_obj_set_size(month_cursor, 6, UI_PLAYBACK_MONTHS_ROW_H - 4);
+    lv_obj_set_style_bg_color(month_cursor, lv_color_hex(UI_COLOR_ACCENT), 0);
+    lv_obj_set_style_bg_opa(month_cursor, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(month_cursor, 0, 0);
+    lv_obj_set_style_radius(month_cursor, 2, 0);
+    lv_obj_set_pos(month_cursor, UI_PLAYBACK_MONTHS_X, UI_PLAYBACK_MONTHS_Y + 2);
+    lv_obj_add_flag(month_cursor, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_t *label = lv_label_create(cont);
     snprintf(buf, sizeof(buf), "*%s\n**%s", _lang("Long press the Enter button to exit"), _lang("Long press the Func button to delete"));
@@ -294,6 +322,7 @@ static int walk_sdcard() {
         strncpy(pnode->label, in_file->d_name, dot - in_file->d_name);
         strcpy(pnode->ext, dot + 1);
         pnode->star = dvr_has_stars(fname);
+        pnode->mtime = fs_mtime(fname);
 
         pnode->size = size;
 
@@ -311,7 +340,66 @@ static int walk_sdcard() {
     snprintf(fname, sizeof(fname), "cp %s*." REC_packJPG " %s", MEDIA_FILES_DIR, TMP_DIR);
     system_exec(fname);
 
+    build_month_list();
+    update_month_list_ui();
+
     return media_db.count;
+}
+
+// Walks seq order (0 = most recent, see get_list()) and records where each
+// calendar month starts. Capped at UI_PLAYBACK_MONTHS_VISIBLE (and the
+// backing array's MAX_MONTH_ENTRIES): older months beyond that just don't
+// get a row rather than overflowing the list.
+static void build_month_list(void) {
+    month_count = 0;
+    for (int seq = 0; seq < media_db.count && month_count < UI_PLAYBACK_MONTHS_VISIBLE &&
+                       month_count < MAX_MONTH_ENTRIES;
+         seq++) {
+        media_file_node_t *pnode = get_list(seq);
+        struct tm tmv;
+        localtime_r(&pnode->mtime, &tmv);
+
+        char label[8];
+        snprintf(label, sizeof(label), "%02d-%02d", tmv.tm_mon + 1, tmv.tm_year % 100);
+
+        if (month_count == 0 || strcmp(month_list[month_count - 1].label, label) != 0) {
+            snprintf(month_list[month_count].label, sizeof(month_list[month_count].label), "%s", label);
+            month_list[month_count].start_seq = seq;
+            month_count++;
+        }
+    }
+}
+
+static void update_month_list_ui(void) {
+    for (uint32_t i = 0; i < UI_PLAYBACK_MONTHS_VISIBLE; i++) {
+        if ((int)i < month_count) {
+            lv_label_set_text(month_labels[i], month_list[i].label);
+            lv_obj_clear_flag(month_labels[i], LV_OBJ_FLAG_HIDDEN);
+        } else {
+            lv_obj_add_flag(month_labels[i], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
+}
+
+// Repoints the cursor at whichever month media_db.cur_sel currently falls
+// in. month_list is ordered by increasing start_seq (top = most recent), so
+// the target row is the last one whose start_seq doesn't exceed cur_sel.
+static void update_month_cursor(void) {
+    if (month_count == 0) {
+        lv_obj_add_flag(month_cursor, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+
+    int idx = 0;
+    for (int i = 0; i < month_count; i++) {
+        if (month_list[i].start_seq <= media_db.cur_sel)
+            idx = i;
+        else
+            break;
+    }
+
+    lv_obj_clear_flag(month_cursor, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_pos(month_cursor, UI_PLAYBACK_MONTHS_X, UI_PLAYBACK_MONTHS_Y + idx * UI_PLAYBACK_MONTHS_ROW_H + 2);
 }
 
 static int find_next_available_hot_index() {
@@ -380,6 +468,8 @@ static void update_page() {
             show_pb_item(i, NULL, false);
         }
     }
+
+    update_month_cursor();
 }
 
 static void update_item(uint8_t cur_pos, uint8_t lst_pos) {
@@ -502,6 +592,7 @@ void pb_key(uint8_t const key) {
 
         if (lst_page_num == cur_page_num) {
             update_item(cur_pos, lst_pos);
+            update_month_cursor();
         } else {
             update_page();
         }
@@ -526,6 +617,7 @@ void pb_key(uint8_t const key) {
 
         if (lst_page_num == cur_page_num) {
             update_item(cur_pos, lst_pos);
+            update_month_cursor();
         } else {
             update_page();
         }

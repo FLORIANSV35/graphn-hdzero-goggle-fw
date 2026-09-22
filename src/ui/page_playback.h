@@ -4,6 +4,8 @@
 extern "C" {
 #endif
 
+#include <time.h>
+
 #include <lvgl/lvgl.h>
 
 #include "ui/ui_main_menu.h"
@@ -23,12 +25,20 @@ extern "C" {
 
 #define MAX_VIDEO_FILES 999
 
+// Generously sized for the month-history sidebar (the "MM-YY" list beside
+// the grid, most recent at the top, with a cursor tracking the highlighted
+// clip) -- covers over 3 years of monthly footage. The per-target visible
+// row count (UI_PLAYBACK_MONTHS_VISIBLE, conf/ui.h) is smaller, since it's
+// bounded by actual screen height; this is just the backing array size.
+#define MAX_MONTH_ENTRIES 40
+
 typedef struct {
     char filename[64];
     char label[64];
     char ext[16];
     int size;
     bool star;
+    time_t mtime;
 } media_file_node_t;
 
 typedef struct {
@@ -36,6 +46,11 @@ typedef struct {
     int count;
     int cur_sel;
 } media_db_t;
+
+typedef struct {
+    char label[8];  // "MM-YY"
+    int start_seq;  // seq (0 = most recent) of the first item in this month
+} pb_month_entry_t;
 
 typedef struct {
     lv_obj_t *_img;
