@@ -11,9 +11,29 @@
 static lv_coord_t col_dsc[] = {UI_AUTOSCAN_COLS};
 static lv_coord_t row_dsc[] = {UI_AUTOSCAN_ROWS};
 
-static btn_group_t btn_group0;
-static btn_group_t btn_group1;
-static btn_group_t btn_group2; // Load from Boot: Yes / No
+// Row 0: how the goggles come up -- run a scan, boot straight to a channel,
+// or open the menu (loading that same channel behind it either way).
+static btn_group_t btn_group_startup;
+// Row 1: which channel that is -- whatever was last active, or a specific
+// source picked below.
+static btn_group_t btn_group_then;
+// Row 2 (2 grid rows): the specific source, only meaningful/selectable when
+// "Then" is set to Source.
+static btn_group_t btn_group_source;
+
+enum { ROW_STARTUP = 0, ROW_THEN, ROW_SOURCE, ROW_SOURCE_CONT, ROW_BACK };
+
+// Reflect "Then" onto the Source row's selectability and pill dimming --
+// called at page creation and every time "Then" is toggled.
+static void update_source_row_enabled(void) {
+    bool enabled = (g_setting.autoscan.source != SETTING_AUTOSCAN_SOURCE_LAST);
+    if (enabled) {
+        lv_obj_add_flag(pp_autoscan.p_arr.panel[ROW_SOURCE], FLAG_SELECTABLE);
+    } else {
+        lv_obj_clear_flag(pp_autoscan.p_arr.panel[ROW_SOURCE], FLAG_SELECTABLE);
+    }
+    btn_group_enable(&btn_group_source, enabled);
+}
 
 static lv_obj_t *page_autoscan_create(lv_obj_t *parent, panel_arr_t *arr) {
     char buf[128];
@@ -26,7 +46,7 @@ static lv_obj_t *page_autoscan_create(lv_obj_t *parent, panel_arr_t *arr) {
     lv_obj_add_style(section, &style_submenu, LV_PART_MAIN);
     lv_obj_set_size(section, UI_PAGE_VIEW_SIZE);
 
-    snprintf(buf, sizeof(buf), "%s:", _lang("Startup Scan"));
+    snprintf(buf, sizeof(buf), "%s:", _lang("Startup"));
     create_text(NULL, section, false, buf, LV_MENU_ITEM_BUILDER_VARIANT_2);
 
     lv_obj_t *cont = lv_obj_create(section);
@@ -40,43 +60,33 @@ static lv_obj_t *page_autoscan_create(lv_obj_t *parent, panel_arr_t *arr) {
     lv_obj_set_style_grid_row_dsc_array(cont, row_dsc, 0);
 
     create_select_item(arr, cont);
-    lv_obj_set_grid_cell(pp_autoscan.p_arr.panel[1], LV_GRID_ALIGN_STRETCH, 0, 6,
-                         LV_GRID_ALIGN_STRETCH, 1, 2);
-    lv_obj_clear_flag(pp_autoscan.p_arr.panel[2], FLAG_SELECTABLE);
-    pp_autoscan.p_arr.no_card |= 1u << 2; // second row of the merged Source picker
+    lv_obj_set_grid_cell(pp_autoscan.p_arr.panel[ROW_SOURCE], LV_GRID_ALIGN_STRETCH, 0, 6,
+                         LV_GRID_ALIGN_STRETCH, ROW_SOURCE, 2);
+    lv_obj_clear_flag(pp_autoscan.p_arr.panel[ROW_SOURCE_CONT], FLAG_SELECTABLE);
+    pp_autoscan.p_arr.no_card |= 1u << ROW_SOURCE_CONT; // second row of the merged Source picker
 
-    btn_group_t btn_group;
-    create_btn_group_item(&btn_group0, cont, 3, _lang("Startup Scan"), _lang("On"), _lang("Last"), _lang("Off"), "", 0);
+    create_btn_group_item(&btn_group_startup, cont, 3, _lang("Startup"), _lang("Scan"), _lang("Boot"), _lang("Menu"), "", ROW_STARTUP);
+    create_btn_group_item(&btn_group_then, cont, 2, _lang("Then"), _lang("Last"), _lang("Source"), "", "", ROW_THEN);
 #if defined(HDZBOXPRO) || defined(HDZGOGGLE2)
-    // Matches setting_autoscan_source_t order; "Auto" (= Auto Detect, value 5)
-    // is BoxPro/G2 only (built-in analog).
-    create_btn_group_item2(&btn_group1, cont, 6, _lang("Source"), _lang("Last"), _lang("HDZero"), _lang("Analog"), _lang("AV In"), _lang("HDMI In"), _lang("Auto"), 1); // 2 rows
+    // Matches setting_autoscan_source_t order (minus Last, handled by "Then"
+    // above); "Auto" (= Auto Detect) is BoxPro/G2 only (built-in analog).
+    create_btn_group_item2(&btn_group_source, cont, 5, _lang("Source"), _lang("HDZero"), _lang("Analog"), _lang("AV In"), _lang("HDMI In"), _lang("Auto"), "", ROW_SOURCE);
 #else
-    create_btn_group_item2(&btn_group1, cont, 5, _lang("Source"), _lang("Last"), _lang("HDZero"), _lang("Analog"), _lang("AV In"), _lang("HDMI In"), " ", 1); // 2 rows
+    create_btn_group_item2(&btn_group_source, cont, 4, _lang("Source"), _lang("HDZero"), _lang("Analog"), _lang("AV In"), _lang("HDMI In"), "", "", ROW_SOURCE);
 #endif
-    // With Startup Scan=On: Yes = boot straight into the selected source, No =
-    // run a Scan Now sweep for its protocol first (HDZero's historical
-    // behavior, now offered for Analog and Auto too).
-    create_btn_group_item(&btn_group2, cont, 2, _lang("Boot to Source"), _lang("Yes"), _lang("No"), "", "", 3);
-    // "Boot to Source" is wider than the label column and bleeds into the
-    // column where the option grid normally starts, so the selection arrow of
-    // "Yes" would draw on top of the text. Shift both options one column
-    // right (under the picker's middle/right columns).
-    lv_obj_set_grid_cell(btn_group2.btn_a[0].container, LV_GRID_ALIGN_START, 3, 1,
-                         LV_GRID_ALIGN_CENTER, 3, 1);
-    lv_obj_set_grid_cell(btn_group2.btn_a[1].container, LV_GRID_ALIGN_START, 4, 1,
-                         LV_GRID_ALIGN_CENTER, 3, 1);
     snprintf(buf, sizeof(buf), "< %s", _lang("Back"));
-    create_label_item(cont, buf, 1, 4, 1);
+    create_label_item(cont, buf, 1, ROW_BACK, 1);
 
     lv_obj_t *label2 = lv_label_create(cont);
-    char note[256];
-    snprintf(note, sizeof(note), "%s\n%s",
-             _lang("*if Startup Scan is 'Last', goggles will default to show last tuned channel"),
+    char note[320];
+    snprintf(note, sizeof(note), "%s\n%s\n%s\n%s",
+             _lang("*Scan runs a search at boot; Boot loads the picked channel directly"),
+             _lang("*Menu does the same as Boot, then opens this menu on top of it"),
+             _lang("*if 'Then' is Last, the goggles use whichever channel was last active"),
 #if defined(HDZBOXPRO) || defined(HDZGOGGLE2)
-             _lang("*'Boot to Source' does not affect AV In or HDMI In; they always load from boot"));
+             _lang("*Scan has no effect on AV In or HDMI In; they always load directly"));
 #else
-             _lang("*'Boot to Source' does not affect Analog, AV In or HDMI In; they always load from boot"));
+             _lang("*Scan has no effect on Analog, AV In or HDMI In; they always load directly"));
 #endif
     lv_label_set_text(label2, note);
     lv_obj_set_style_text_font(label2, UI_PAGE_LABEL_FONT, 0);
@@ -85,27 +95,63 @@ static lv_obj_t *page_autoscan_create(lv_obj_t *parent, panel_arr_t *arr) {
     lv_obj_set_style_pad_top(label2, UI_PAGE_TEXT_PAD, 0);
     lv_label_set_long_mode(label2, LV_LABEL_LONG_WRAP);
     lv_obj_set_grid_cell(label2, LV_GRID_ALIGN_START, 1, 4,
-                         LV_GRID_ALIGN_START, 5, 2);
+                         LV_GRID_ALIGN_START, ROW_BACK + 1, 3);
 
-    btn_group_set_sel(&btn_group0, g_setting.autoscan.status);
-    btn_group_set_sel(&btn_group1, g_setting.autoscan.source);
-    btn_group_set_sel(&btn_group2, g_setting.autoscan.load_from_boot ? 0 : 1);
+    int startup_sel;
+    if (g_setting.autoscan.status == SETTING_AUTOSCAN_STATUS_OFF) {
+        startup_sel = 2; // Menu
+    } else if (g_setting.autoscan.status == SETTING_AUTOSCAN_STATUS_ON &&
+               !g_setting.autoscan.load_from_boot) {
+        startup_sel = 0; // Scan
+    } else {
+        // ON + load_from_boot, or a pre-existing "Last" status from an older
+        // firmware -- main.c treats both the same way, and this page always
+        // writes ON + load_from_boot=true for "Boot" going forward.
+        startup_sel = 1; // Boot
+    }
+    btn_group_set_sel(&btn_group_startup, startup_sel);
+
+    bool then_source = (g_setting.autoscan.source != SETTING_AUTOSCAN_SOURCE_LAST);
+    btn_group_set_sel(&btn_group_then, then_source ? 1 : 0);
+    btn_group_set_sel(&btn_group_source, then_source ? g_setting.autoscan.source - 1 : 0);
+    update_source_row_enabled();
     return page;
 }
 
 static void page_autoscan_on_click(uint8_t key, int sel) {
-    if (sel == 0) {
-        btn_group_toggle_sel(&btn_group0);
-        g_setting.autoscan.status = btn_group_get_sel(&btn_group0);
+    if (sel == ROW_STARTUP) {
+        btn_group_toggle_sel(&btn_group_startup);
+        switch (btn_group_get_sel(&btn_group_startup)) {
+        case 0: // Scan
+            g_setting.autoscan.status = SETTING_AUTOSCAN_STATUS_ON;
+            g_setting.autoscan.load_from_boot = false;
+            break;
+        case 1: // Boot
+            g_setting.autoscan.status = SETTING_AUTOSCAN_STATUS_ON;
+            g_setting.autoscan.load_from_boot = true;
+            break;
+        default: // Menu
+            g_setting.autoscan.status = SETTING_AUTOSCAN_STATUS_OFF;
+            g_setting.autoscan.load_from_boot = false;
+            break;
+        }
         ini_putl("autoscan", "status", g_setting.autoscan.status, SETTING_INI);
-    } else if (sel < 3) {
-        btn_group_toggle_sel(&btn_group1);
-        g_setting.autoscan.source = btn_group_get_sel(&btn_group1);
-        ini_putl("autoscan", "source", g_setting.autoscan.source, SETTING_INI);
-    } else if (sel == 3) {
-        btn_group_toggle_sel(&btn_group2);
-        g_setting.autoscan.load_from_boot = (btn_group_get_sel(&btn_group2) == 0);
         settings_put_bool("autoscan", "load_from_boot", g_setting.autoscan.load_from_boot);
+    } else if (sel == ROW_THEN) {
+        btn_group_toggle_sel(&btn_group_then);
+        if (btn_group_get_sel(&btn_group_then) == 0) {
+            g_setting.autoscan.source = SETTING_AUTOSCAN_SOURCE_LAST;
+        } else if (g_setting.autoscan.source == SETTING_AUTOSCAN_SOURCE_LAST) {
+            // Switching to Source with nothing picked yet: default to HDZero.
+            g_setting.autoscan.source = SETTING_AUTOSCAN_SOURCE_HDZERO;
+            btn_group_set_sel(&btn_group_source, 0);
+        }
+        ini_putl("autoscan", "source", g_setting.autoscan.source, SETTING_INI);
+        update_source_row_enabled();
+    } else if (sel == ROW_SOURCE) {
+        btn_group_toggle_sel(&btn_group_source);
+        g_setting.autoscan.source = btn_group_get_sel(&btn_group_source) + 1;
+        ini_putl("autoscan", "source", g_setting.autoscan.source, SETTING_INI);
     }
 }
 
@@ -114,7 +160,7 @@ page_pack_t pp_autoscan = {
         .cur = 0,
         .max = 5,
     },
-    .name = "Startup Scan",
+    .name = "Startup",
     .create = page_autoscan_create,
     .enter = NULL,
     .exit = NULL,

@@ -579,7 +579,10 @@ void create_btn_group_item2(btn_group_t *btn_group, lv_obj_t *parent, int count,
     btn_group->valid = count;
     btn_group->current = 0;
 
-    lv_obj_t *label = lv_label_create(parent);
+    // Stored on the group (not just a local), like create_btn_group_item
+    // does -- btn_group_show/btn_group_enable read it back.
+    btn_group->label = lv_label_create(parent);
+    lv_obj_t *label = btn_group->label;
     lv_label_set_text(label, name);
     lv_obj_set_style_text_font(label, UI_PAGE_TEXT_FONT, 0);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_LEFT, 0);
