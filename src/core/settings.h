@@ -347,6 +347,7 @@ typedef struct {
 typedef struct {
     bool logging;
     bool selftest;
+    int low_space_alert_mb; // SD_LOW_SPACE_MIN_MB..SD_LOW_SPACE_MAX_MB, step SD_LOW_SPACE_STEP_MB (util/sdcard.h)
 } setting_storage_t;
 
 typedef struct {

@@ -366,11 +366,15 @@ void statubar_update(void) {
             if (cnt != 0) {
                 if (sdcard_is_full())
                     snprintf(buf, sizeof(buf), "%d %s, %s %s", cnt, _lang("clip(s)"), _lang("SD Card"), _lang("full"));
+                else if (sdcard_is_low())
+                    snprintf(buf, sizeof(buf), "%d %s, #FFA500 %.2fGB %s#", cnt, _lang("clip(s)"), gb, _lang("available"));
                 else
                     snprintf(buf, sizeof(buf), "%d %s, %.2fGB %s", cnt, _lang("clip(s)"), gb, _lang("available"));
             } else {
                 if (sdcard_is_full())
                     snprintf(buf, sizeof(buf), "#FF0000 %s %s#", _lang("SD Card"), _lang("full"));
+                else if (sdcard_is_low())
+                    snprintf(buf, sizeof(buf), "#FFA500 %.2fGB %s#", gb, _lang("available"));
                 else
                     snprintf(buf, sizeof(buf), "%.2fGB %s", gb, _lang("available"));
             }

@@ -16,6 +16,7 @@
 #include "ui/page_common.h"
 #include "ui/page_scannow.h"
 #include "util/filesystem.h"
+#include "util/sdcard.h"
 #include "util/system.h"
 
 #define SETTINGS_INI_VERSION_UNKNOWN 0
@@ -276,6 +277,7 @@ const setting_t g_setting_defaults = {
     .storage = {
         .logging = false,
         .selftest = false,
+        .low_space_alert_mb = SD_LOW_SPACE_DEFAULT_MB,
     },
     .source = {
         .analog_channel = 33, // R1
@@ -696,6 +698,12 @@ void settings_load(void) {
 
     // storage
     g_setting.storage.logging = settings_get_bool("storage", "logging", g_setting_defaults.storage.logging);
+    g_setting.storage.low_space_alert_mb = ini_getl("storage", "low_space_alert_mb",
+                                                     g_setting_defaults.storage.low_space_alert_mb, SETTING_INI);
+    if (g_setting.storage.low_space_alert_mb < SD_LOW_SPACE_MIN_MB ||
+        g_setting.storage.low_space_alert_mb > SD_LOW_SPACE_MAX_MB ||
+        g_setting.storage.low_space_alert_mb % SD_LOW_SPACE_STEP_MB != 0)
+        g_setting.storage.low_space_alert_mb = g_setting_defaults.storage.low_space_alert_mb;
 
     // analog rssi
     g_setting.analog_rssi.calib_min = ini_getl("analog_rssi", "calib_min", g_setting_defaults.analog_rssi.calib_min, SETTING_INI);

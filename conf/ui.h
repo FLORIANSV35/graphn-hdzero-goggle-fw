@@ -156,7 +156,7 @@ extern "C" {
 #define UI_SOURCE_COLS                    160, 160, 160, 160, 160, 160, LV_GRID_TEMPLATE_LAST
 #define UI_SOURCE_ROWS                    60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, LV_GRID_TEMPLATE_LAST
 #define UI_STORAGE_COLS                   160, 160, 160, 160, 160, 160, LV_GRID_TEMPLATE_LAST
-#define UI_STORAGE_ROWS                   60, 60, 60, 60, 60, 60, 60, 40, LV_GRID_TEMPLATE_LAST
+#define UI_STORAGE_ROWS                   60, 60, 60, 60, 60, 60, 60, 60, 40, LV_GRID_TEMPLATE_LAST
 #define UI_VERSION_COLS                   160, 160, 160, 160, 160, 160, 160, LV_GRID_TEMPLATE_LAST
 #define UI_VERSION_ROWS                   60, 60, 60, 60, 60, 60, 60, 60, 60, 60, LV_GRID_TEMPLATE_LAST
 #define UI_ANALOG_RSSI_COLS               160, 160, 160, 160, 160, 160, LV_GRID_TEMPLATE_LAST
@@ -338,7 +338,7 @@ static inline int UI_STATUS_BAR_LABEL_WIDTH() {
 #define UI_SOURCE_COLS                    106, 106, 106, 106, 106, 106, LV_GRID_TEMPLATE_LAST
 #define UI_SOURCE_ROWS                    40, 40, 40, 40, 40, 40, 40, 40, 40, 40, LV_GRID_TEMPLATE_LAST
 #define UI_STORAGE_COLS                   106, 106, 106, 106, 106, 106, LV_GRID_TEMPLATE_LAST
-#define UI_STORAGE_ROWS                   40, 40, 40, 40, 40, 40, 40, 26, LV_GRID_TEMPLATE_LAST
+#define UI_STORAGE_ROWS                   40, 40, 40, 40, 40, 40, 40, 40, 26, LV_GRID_TEMPLATE_LAST
 // col 1+ widened so the full version string ("app: ... rx0: .. rx1: .. va: ...",
 // 630px at the normal text font) stays inside the stretched selection bar
 #define UI_VERSION_COLS                   106, 130, 130, 130, 130, 130, LV_GRID_TEMPLATE_LAST

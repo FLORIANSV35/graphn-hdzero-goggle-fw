@@ -25,6 +25,7 @@
 #include "core/msp_displayport.h"
 #include "core/osd.h"
 #include "core/settings.h"
+#include "driver/beep.h"
 #include "driver/dm5680.h"
 #include "driver/hardware.h"
 #include "driver/it66021.h"
@@ -253,6 +254,16 @@ static void *thread_peripheral(void *ptr) {
                 // would report the rootfs instead.
                 if (g_sdcard_enable) {
                     sdcard_update_free_size();
+                    // One beep on the high->low transition, not every tick --
+                    // the status bar (ui_statusbar.c) and OSD banner
+                    // (osd_sd_low_show) already give a persistent visual cue,
+                    // this is just the "you might not be looking" nudge.
+                    static bool was_low = false;
+                    bool const is_low = sdcard_is_low();
+                    if (is_low && !was_low) {
+                        beep();
+                    }
+                    was_low = is_low;
                 }
             }
             // detect HDZERO

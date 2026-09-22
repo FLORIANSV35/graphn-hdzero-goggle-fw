@@ -38,6 +38,7 @@
 #include "ui/page_scannow.h"
 #include "ui/ui_image_setting.h"
 #include "ui/ui_porting.h"
+#include "util/sdcard.h"
 
 extern const lv_font_t conthrax_26;
 extern const lv_font_t robotomono_26;
@@ -246,6 +247,17 @@ void osd_battery_low_show() {
         lv_obj_clear_flag(g_osd_hdzero.battery_low[is_fhd], LV_OBJ_FLAG_HIDDEN);
     } else
         lv_obj_add_flag(g_osd_hdzero.battery_low[is_fhd], LV_OBJ_FLAG_HIDDEN);
+}
+
+// Persistent visual cue while free space is under SD_LOW_SPACE_MB, alongside
+// the one-time beep (thread.c, on the high->low transition) and the status
+// bar's own text (ui_statusbar.c) -- this is the one visible while actually
+// watching video, when neither of the others is on screen.
+static void osd_sd_low_show(void) {
+    if (g_sdcard_enable && sdcard_is_low())
+        lv_obj_clear_flag(g_osd_hdzero.sd_low[is_fhd], LV_OBJ_FLAG_HIDDEN);
+    else
+        lv_obj_add_flag(g_osd_hdzero.sd_low[is_fhd], LV_OBJ_FLAG_HIDDEN);
 }
 
 void osd_battery_voltage_show(bool bShow) {
@@ -971,6 +983,7 @@ void osd_hdzero_update(void) {
     // the cadence at which the gradual-warning blink phase is re-evaluated.
     if (gif_cnt % 10 == 0) {
         osd_battery_low_show();
+        osd_sd_low_show();
     }
 
     osd_resource_path(buf, "ant%d.bmp", is_fhd, RSSI2Ant(rx_status[0].rx_rssi[1]));
@@ -1089,6 +1102,18 @@ static void embedded_osd_init(uint8_t fhd) {
     lv_obj_set_style_text_color(g_osd_hdzero.vtx_sent[fhd], lv_color_make(0x00, 0xFF, 0x00), 0);
     lv_obj_align(g_osd_hdzero.vtx_sent[fhd], LV_ALIGN_TOP_MID, 0, fhd ? 90 : 60);
     lv_obj_add_flag(g_osd_hdzero.vtx_sent[fhd], LV_OBJ_FLAG_HIDDEN);
+
+    // Fixed position (bottom-mid), not one of the user-repositionable
+    // OSD_GOGGLE_* elements -- reuses the channel slot's position struct as a
+    // throwaway initial value for osd_object_create_label, same trick
+    // vtx_sent uses above, since the position is overridden right after.
+    osd_object_create_label(fhd, &g_osd_hdzero.sd_low[fhd], "LOW SD SPACE", &g_setting.osd.element[OSD_GOGGLE_CHANNEL].position, so);
+    lv_obj_set_style_bg_color(g_osd_hdzero.sd_low[fhd], lv_color_hex(0x010101), LV_PART_MAIN);
+    lv_obj_set_style_bg_opa(g_osd_hdzero.sd_low[fhd], LV_OPA_100, 0);
+    lv_obj_set_style_radius(g_osd_hdzero.sd_low[fhd], 8, 0);
+    lv_obj_set_style_text_color(g_osd_hdzero.sd_low[fhd], lv_color_make(0xFF, 0xA5, 0x00), 0);
+    lv_obj_align(g_osd_hdzero.sd_low[fhd], LV_ALIGN_BOTTOM_MID, 0, fhd ? -90 : -60);
+    lv_obj_add_flag(g_osd_hdzero.sd_low[fhd], LV_OBJ_FLAG_HIDDEN);
 
     osd_resource_path(buf, "%s", is_fhd, noSdcard_bmp);
     osd_object_create_img(fhd, &g_osd_hdzero.sd_rec[fhd], buf, &g_setting.osd.element[OSD_GOGGLE_SD_REC].position, so);

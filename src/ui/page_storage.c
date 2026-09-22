@@ -8,12 +8,14 @@
 
 #include "../conf/ui.h"
 
+#include "core/app_state.h"
 #include "core/common.hh"
 #include "core/settings.h"
 #include "lang/language.h"
 #include "record/record_definitions.h"
 #include "ui/page_common.h"
 #include "ui/page_playback.h"
+#include "ui/ui_style.h"
 #include "util/filesystem.h"
 #include "util/sdcard.h"
 #include "util/system.h"
@@ -25,6 +27,7 @@ extern void (*sdcard_ready_cb)();
  */
 typedef enum {
     ITEM_LOGGING,
+    ITEM_LOW_SPACE_ALERT,
     ITEM_FORMAT,
     ITEM_REPAIR,
     ITEM_CLEAR_DVR,
@@ -56,6 +59,8 @@ typedef enum {
 
 typedef struct {
     btn_group_t logging;
+    slider_group_t low_space_slider;
+    bool low_space_focused;
     lv_obj_t *format_sd;
     lv_obj_t *repair_sd;
     lv_obj_t *clear_dvr;
@@ -425,11 +430,18 @@ static lv_obj_t *page_storage_create(lv_obj_t *parent, panel_arr_t *arr) {
     create_btn_group_item(&page_storage.logging, cont, 2, _lang("Logging"), _lang("On"), _lang("Off"), "", "", 0);
     btn_group_set_sel(&page_storage.logging, g_setting.storage.logging ? 0 : 1);
 
-    page_storage.format_sd = create_label_item(cont, _lang("Format SD Card"), 1, 1, 3);
-    page_storage.repair_sd = create_label_item(cont, _lang("Repair SD Card"), 1, 2, 3);
-    page_storage.clear_dvr = create_label_item(cont, _lang("Clear DVR Folder"), 1, 3, 3);
+    create_slider_item(&page_storage.low_space_slider, cont, _lang("Low Space Alert"),
+                       SD_LOW_SPACE_MAX_MB, g_setting.storage.low_space_alert_mb, 1);
+    lv_slider_set_range(page_storage.low_space_slider.slider, SD_LOW_SPACE_MIN_MB, SD_LOW_SPACE_MAX_MB);
+    lv_slider_set_value(page_storage.low_space_slider.slider, g_setting.storage.low_space_alert_mb, LV_ANIM_OFF);
+    snprintf(buf, sizeof(buf), "%.1fGB", g_setting.storage.low_space_alert_mb / 1000.0);
+    lv_label_set_text(page_storage.low_space_slider.label, buf);
+
+    page_storage.format_sd = create_label_item(cont, _lang("Format SD Card"), 1, 2, 3);
+    page_storage.repair_sd = create_label_item(cont, _lang("Repair SD Card"), 1, 3, 3);
+    page_storage.clear_dvr = create_label_item(cont, _lang("Clear DVR Folder"), 1, 4, 3);
     snprintf(buf, sizeof(buf), "< %s", _lang("Back"));
-    page_storage.back = create_label_item(cont, buf, 1, 4, 1);
+    page_storage.back = create_label_item(cont, buf, 1, 5, 1);
 
     page_storage.note = lv_label_create(cont);
     lv_obj_set_style_text_font(page_storage.note, UI_PAGE_LABEL_FONT, 0);
@@ -437,7 +449,7 @@ static lv_obj_t *page_storage_create(lv_obj_t *parent, panel_arr_t *arr) {
     lv_obj_set_style_text_color(page_storage.note, lv_color_hex(TEXT_COLOR_DEFAULT), 0);
     lv_obj_set_style_pad_top(page_storage.note, UI_PAGE_TEXT_PAD, 0);
     lv_label_set_long_mode(page_storage.note, LV_LABEL_LONG_WRAP);
-    lv_obj_set_grid_cell(page_storage.note, LV_GRID_ALIGN_START, 1, 4, LV_GRID_ALIGN_START, 5, 2);
+    lv_obj_set_grid_cell(page_storage.note, LV_GRID_ALIGN_START, 1, 4, LV_GRID_ALIGN_START, 6, 2);
 
     page_storage.status = create_msgbox_item(_lang("Status"), _lang("None"));
     lv_obj_add_flag(page_storage.status, LV_OBJ_FLAG_HIDDEN);
@@ -445,6 +457,40 @@ static lv_obj_t *page_storage_create(lv_obj_t *parent, panel_arr_t *arr) {
     page_storage_update_controls();
 
     return page;
+}
+
+/**
+ * Formats g_setting.storage.low_space_alert_mb onto the slider's value label.
+ */
+static void page_storage_low_space_update_label() {
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%.1fGB", g_setting.storage.low_space_alert_mb / 1000.0);
+    lv_label_set_text(page_storage.low_space_slider.label, buf);
+}
+
+static void page_storage_low_space_set(int value) {
+    if (value < SD_LOW_SPACE_MIN_MB)
+        value = SD_LOW_SPACE_MIN_MB;
+    else if (value > SD_LOW_SPACE_MAX_MB)
+        value = SD_LOW_SPACE_MAX_MB;
+
+    g_setting.storage.low_space_alert_mb = value;
+    ini_putl("storage", "low_space_alert_mb", value, SETTING_INI);
+
+    lv_slider_set_value(page_storage.low_space_slider.slider, value, LV_ANIM_OFF);
+    page_storage_low_space_update_label();
+}
+
+/**
+ * Exits the low-space slider's focused (value-editing) mode, if active.
+ */
+static void page_storage_low_space_exit_focus() {
+    if (!page_storage.low_space_focused)
+        return;
+
+    app_state_push(APP_STATE_SUBMENU);
+    lv_obj_add_style(page_storage.low_space_slider.slider, &style_silder_main, LV_PART_MAIN);
+    page_storage.low_space_focused = false;
 }
 
 /**
@@ -458,6 +504,7 @@ static void page_storage_enter() {
  * Main exit routine for this page.
  */
 static void page_storage_exit() {
+    page_storage_low_space_exit_focus();
     page_storage_close_status_box();
     page_storage_cancel();
 }
@@ -466,6 +513,14 @@ static void page_storage_exit() {
  * Main navigation routine for this page.
  */
 static void page_storage_on_roller(uint8_t key) {
+    if (page_storage.low_space_focused) {
+        if (key == DIAL_KEY_UP)
+            page_storage_low_space_set(g_setting.storage.low_space_alert_mb - SD_LOW_SPACE_STEP_MB);
+        else if (key == DIAL_KEY_DOWN)
+            page_storage_low_space_set(g_setting.storage.low_space_alert_mb + SD_LOW_SPACE_STEP_MB);
+        return;
+    }
+
     // Ignore commands until timer has expired before allowing user to proceed.
     if (page_storage.confirm_format == 2 ||
         page_storage.confirm_repair == 2 ||
@@ -501,6 +556,17 @@ static void page_storage_on_click(uint8_t key, int sel) {
                 }
             } else if (log_file_opened()) {
                 log_file_close();
+            }
+        }
+        break;
+    case ITEM_LOW_SPACE_ALERT:
+        if (!page_storage.disable_controls) {
+            if (page_storage.low_space_focused) {
+                page_storage_low_space_exit_focus();
+            } else {
+                app_state_push(APP_STATE_SUBMENU_ITEM_FOCUSED);
+                lv_obj_add_style(page_storage.low_space_slider.slider, &style_silder_select, LV_PART_MAIN);
+                page_storage.low_space_focused = true;
             }
         }
         break;

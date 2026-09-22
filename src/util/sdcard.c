@@ -1,4 +1,5 @@
 #include "sdcard.h"
+#include "core/settings.h"
 #include "platform/paths.h"
 
 #include <fcntl.h>
@@ -41,6 +42,10 @@ void sdcard_update_free_size() {
 
 bool sdcard_is_full() {
     return g_sdcard_free_size < 103;
+}
+
+bool sdcard_is_low() {
+    return g_sdcard_free_size > 0 && g_sdcard_free_size < g_setting.storage.low_space_alert_mb;
 }
 
 /*
