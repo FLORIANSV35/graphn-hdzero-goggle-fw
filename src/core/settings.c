@@ -80,6 +80,7 @@ const setting_t g_setting_defaults = {
         .vbr_quality = 6,
         .vbr_max_qp = VBR_MAX_QP_RECOMMENDED,
         .stop_delay_seconds = 0,
+        .rolling = false,
     },
     .image = {
 #if defined(HDZGOGGLE) || defined(HDZGOGGLE2)
@@ -595,6 +596,7 @@ void settings_load(void) {
     g_setting.record.stop_delay_seconds = ini_getl("record", "stop_delay_seconds", g_setting_defaults.record.stop_delay_seconds, SETTING_INI);
     if (g_setting.record.stop_delay_seconds > 30)
         g_setting.record.stop_delay_seconds = 30;
+    g_setting.record.rolling = settings_get_bool("record", "rolling", g_setting_defaults.record.rolling);
 
     // image
     g_setting.image.oled = ini_getl("image", "oled", g_setting_defaults.image.oled, SETTING_INI);

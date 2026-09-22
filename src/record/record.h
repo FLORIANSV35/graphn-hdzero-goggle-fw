@@ -56,6 +56,7 @@ typedef struct
     uint32_t    minDiskSize;
     uint64_t    packSize;
     bool        enableAudio;
+    bool        rolling;
     FileNaming_t fileNaming;
     char        label[REC_labelMAXLEN];
 } RecordParams_t;

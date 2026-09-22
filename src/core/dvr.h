@@ -28,6 +28,10 @@ void dvr_mute_live_audio(void);
 void dvr_restore_live_audio(void);
 void dvr_enable_line_out(bool enable);
 bool dvr_live_audio_is_enabled(void);
+// True when there is enough room on the card to begin a recording. With rolling
+// recording enabled the recorder frees space itself, so a nearly full card is no
+// longer a reason to refuse the start.
+bool dvr_space_allows_start(void);
 void dvr_cmd(osd_dvr_cmd_t cmd);
 void dvr_update_vi_conf(video_resolution_t fmt);
 void dvr_toggle();

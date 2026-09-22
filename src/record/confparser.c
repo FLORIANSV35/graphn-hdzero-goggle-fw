@@ -55,6 +55,7 @@ void rec_dbg_log(const char* fmt, ...)
 #define KEY_SIZE        "size"
 #define KEY_FULL        "full"
 #define KEY_AUDIO       "audio"
+#define KEY_ROLLING     "rolling"
 #define KEY_NAMING      "naming"
 #define KEY_LABEL       "label"
 
@@ -486,6 +487,12 @@ void conf_loadRecordParams(char* confFile, RecordParams_t* para)
 
     lValue = ini_getbool(SEC_RECORD, KEY_AUDIO, TRUE, confFile);
     para->enableAudio = (lValue>0);
+
+    /* Rolling recording. Defaults off so an upgrade never starts deleting a
+     * user's clips on its own; the goggles app writes this key before every
+     * recording, mirroring how KEY_NAMING is handled. */
+    lValue = ini_getbool(SEC_RECORD, KEY_ROLLING, FALSE, confFile);
+    para->rolling = (lValue>0);
 
     // Optional race label from the goggles app. Keep the recorder defensive
     // if the config file was edited by hand.

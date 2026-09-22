@@ -135,6 +135,7 @@ typedef struct {
     uint8_t vbr_quality;
     uint8_t vbr_max_qp;
     uint8_t stop_delay_seconds; // auto record: grace period after signal loss before stopping (0 = off)
+    bool rolling;               // reclaim space by deleting the oldest clips instead of stopping when full
 } setting_record_t;
 
 typedef enum {

@@ -24,6 +24,7 @@ static btn_group_t btn_group_bitrate_scale;
 static btn_group_t btn_group_rate_control;
 static btn_group_t btn_group_record_osd;
 static btn_group_t btn_group_file_naming;
+static btn_group_t btn_group_rolling;
 static slider_group_t slider_group_stop_delay;
 static slider_group_t slider_group_vbr_quality;
 static slider_group_t slider_group_vbr_max_qp;
@@ -38,6 +39,7 @@ enum {
     ROW_VBR_MAX_QP,
     ROW_RECORD_OSD,
     ROW_NAMING_SCHEME,
+    ROW_ROLLING,
     ROW_STOP_DELAY,
     ROW_BACK,
     ROW_RECORD_NOTE,
@@ -165,6 +167,7 @@ static lv_obj_t *page_record_create(lv_obj_t *parent, panel_arr_t *arr) {
     create_slider_item(&slider_group_vbr_max_qp, cont, _lang("VBR Max QP"), VBR_MAX_QP_MAX, g_setting.record.vbr_max_qp, ROW_VBR_MAX_QP);
     create_btn_group_item(&btn_group_record_osd, cont, 2, _lang("Record OSD"), _lang("Yes"), _lang("No"), "", "", ROW_RECORD_OSD);
     create_btn_group_item(&btn_group_file_naming, cont, 3, _lang("Naming Scheme"), _lang("Digits"), _lang("Date"), "ELRS", "", ROW_NAMING_SCHEME);
+    create_btn_group_item(&btn_group_rolling, cont, 2, _lang("Rolling Recording"), _lang("Off"), _lang("On"), "", "", ROW_ROLLING);
     create_slider_item(&slider_group_stop_delay, cont, _lang("Auto DVR Stop Delay"), STOP_DELAY_MAX, g_setting.record.stop_delay_seconds, ROW_STOP_DELAY);
     snprintf(buf, sizeof(buf), "< %s", _lang("Back"));
     create_label_item(cont, buf, 1, ROW_BACK, 1);
@@ -191,6 +194,7 @@ static lv_obj_t *page_record_create(lv_obj_t *parent, panel_arr_t *arr) {
     update_vbr_max_qp_label();
     btn_group_set_sel(&btn_group_record_osd, g_setting.record.osd ? 0 : 1);
     btn_group_set_sel(&btn_group_file_naming, g_setting.record.naming);
+    btn_group_set_sel(&btn_group_rolling, g_setting.record.rolling ? 1 : 0);
     update_stop_delay_label();
 
     update_visibility();
@@ -349,6 +353,10 @@ static void page_record_on_click(uint8_t key, int sel) {
                 dvr_clear_race_label();
             }
         }
+    } else if (sel == ROW_ROLLING) {
+        btn_group_toggle_sel(&btn_group_rolling);
+        g_setting.record.rolling = btn_group_get_sel(&btn_group_rolling);
+        settings_put_bool("record", "rolling", g_setting.record.rolling);
     } else if (sel == ROW_STOP_DELAY) {
         stop_delay_focused = true;
         stop_delay_changed = false;
