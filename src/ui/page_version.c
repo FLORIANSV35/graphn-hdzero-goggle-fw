@@ -232,7 +232,8 @@ static bool flash_elrs() {
 
 static int flash_hdzero(const char *dst_path, const char *dst_file,
                         const char *src_path, const char *src_file,
-                        const char *update_script, bool is_zipped) {
+                        const char *update_script, bool is_zipped,
+                        char *err_out, size_t err_out_size) {
     uint8_t ret = 2;
     char cmd_buff[1024] = {0};
 
@@ -259,7 +260,7 @@ static int flash_hdzero(const char *dst_path, const char *dst_file,
             snprintf(cmd_buff, sizeof(cmd_buff),
                      "%s %s/%s",
                      update_script, dst_path, dst_file);
-            ret = command_monitor(cmd_buff);
+            ret = command_monitor(cmd_buff, err_out, err_out_size);
         }
     }
 
@@ -270,6 +271,7 @@ static void flash_vtx() {
     uint8_t ret = 2;
     char cmd_buff[1024] = {0};
     char buf[128];
+    char err[80] = {0};
 
     lv_obj_clear_flag(bar_vtx, LV_OBJ_FLAG_HIDDEN);
     snprintf(buf, sizeof(buf), "%s...", _lang("Flashing"));
@@ -282,7 +284,8 @@ static void flash_vtx() {
                        fw_select_vtx.path,
                        fw_select_vtx.files[fw_select_vtx.which],
                        "/mnt/app/script/update_vtx.sh",
-                       fw_select_vtx.zipped);
+                       fw_select_vtx.zipped,
+                       err, sizeof(err));
     is_need_update_progress = false;
 
     if (ret == 1) {
@@ -295,6 +298,9 @@ static void flash_vtx() {
         }
     } else if (ret == 2) {
         snprintf(buf, sizeof(buf), "#FFFF00 %s.#", _lang("No firmware found"));
+        lv_label_set_text(btn_vtx, buf);
+    } else if (err[0]) {
+        snprintf(buf, sizeof(buf), "#FF0000 %s: %s#", _lang("Failed, check connection"), err);
         lv_label_set_text(btn_vtx, buf);
     } else {
         snprintf(buf, sizeof(buf), "#FF0000 %s...#", _lang("Failed, check connection"));
@@ -316,6 +322,7 @@ static void flash_goggle() {
     uint8_t ret = 0;
     char cmd_buff[1024] = {0};
     char buf[128];
+    char err[80] = {0};
 
     lv_obj_clear_flag(bar_goggle, LV_OBJ_FLAG_HIDDEN);
 
@@ -336,7 +343,8 @@ static void flash_goggle() {
                        fw_select_goggle.path,
                        fw_select_goggle.files[fw_select_goggle.which],
                        shell_path,
-                       fw_select_goggle.zipped);
+                       fw_select_goggle.zipped,
+                       err, sizeof(err));
     is_need_update_progress = false;
 
     lv_obj_add_flag(bar_goggle, LV_OBJ_FLAG_HIDDEN);
@@ -356,6 +364,12 @@ static void flash_goggle() {
         lv_label_set_text(btn_goggle, buf);
     } else if (ret == 3) {
         snprintf(buf, sizeof(buf), "#FFFF00 %s. %s.#", _lang("Multiple versions been found"), _lang("Keep only one"));
+        lv_label_set_text(btn_goggle, buf);
+    } else if (err[0]) {
+        // Surface the update script's own ERROR line (corrupt/truncated
+        // archive, missing RX/VA/app component, or app-partition write
+        // failure) instead of a bare "FAILED" that gives no clue why.
+        snprintf(buf, sizeof(buf), "#FF0000 %s: %s#", _lang("FAILED"), err);
         lv_label_set_text(btn_goggle, buf);
     } else {
         snprintf(buf, sizeof(buf), "#FF0000 %s#", _lang("FAILED"));
@@ -1004,10 +1018,13 @@ static void page_version_on_update(uint32_t delta_ms) {
     }
 }
 
-uint8_t command_monitor(char *cmd) {
+uint8_t command_monitor(char *cmd, char *err_out, size_t err_out_size) {
     FILE *stream;
     char buf[128];
     uint8_t ret;
+
+    if (err_out && err_out_size)
+        err_out[0] = '\0';
 
     stream = popen(cmd, "r");
     if (!stream)
@@ -1022,6 +1039,10 @@ uint8_t command_monitor(char *cmd) {
     // across a boundary, reporting FAILED on a successful update.
     while (fgets(buf, sizeof(buf), stream)) {
         LOGI("%s", buf);
+        if (err_out && err_out_size && strstr(buf, "ERROR")) {
+            buf[strcspn(buf, "\r\n")] = '\0';
+            snprintf(err_out, err_out_size, "%s", buf);
+        }
         if (strstr(buf, "all done")) {
             ret = 1;
             break;

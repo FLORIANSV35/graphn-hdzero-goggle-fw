@@ -32,7 +32,10 @@ void version_update_title();
 int generate_current_version(sys_version_t *sys_ver);
 
 void *thread_version(void *ptr);
-uint8_t command_monitor(char *cmd);
+// err_out (optional): filled with the last line the update script printed
+// containing "ERROR", so a failed flash can show why instead of a bare
+// "FAILED". Left empty if the script never printed one.
+uint8_t command_monitor(char *cmd, char *err_out, size_t err_out_size);
 
 #ifdef __cplusplus
 }
