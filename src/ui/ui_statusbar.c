@@ -338,9 +338,12 @@ void statubar_update(void) {
     static int analog_channel_last = 0;
     static source_t source_last = SOURCE_HDZERO;
     static setting_sources_hdzero_band_t hdzero_band_last = SETTING_SOURCES_HDZERO_BAND_RACEBAND;
+    static bool auto_protocol_detect_last = false;
     uint8_t channel_changed = (hdzero_channel_last != g_setting.scan.channel) || (analog_channel_last != g_setting.source.analog_channel);
     if (!source_detecting &&
-        (channel_changed || (source_last != g_source_info.source) || (hdzero_band_last != g_setting.source.hdzero_band))) {
+        (channel_changed || (source_last != g_source_info.source) ||
+         (hdzero_band_last != g_setting.source.hdzero_band) ||
+         (auto_protocol_detect_last != g_setting.source.auto_protocol_detect))) {
         memset(buf, 0, sizeof(buf));
         statusbar_format_source(buf, sizeof(buf));
         lv_label_set_text(label[STS_SOURCE], buf);
@@ -350,6 +353,7 @@ void statubar_update(void) {
     analog_channel_last = g_setting.source.analog_channel;
     source_last = g_source_info.source;
     hdzero_band_last = g_setting.source.hdzero_band;
+    auto_protocol_detect_last = g_setting.source.auto_protocol_detect;
 
     if (page_storage_is_sd_repair_active()) {
         lv_img_set_src(img_sdc, &img_sdcard);
