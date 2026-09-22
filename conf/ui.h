@@ -126,7 +126,13 @@ extern "C" {
 #define UI_OSD_TEXT_FONT                  &lv_font_montserrat_20
 #define UI_PLAYBACK_COLS                  320, 320, 320, LV_GRID_TEMPLATE_LAST
 #define UI_PLAYBACK_ROWS                  150, 30, 150, 30, 150, 30, 30, LV_GRID_TEMPLATE_LAST
-#define UI_POWER_COLS                     160, 160, 160, 160, 120, 210, LV_GRID_TEMPLATE_LAST
+// col 4 was 120 (narrower than a 160px option pill), which let "Warning
+// Type"'s 3rd button (Both) overflow into the 4th (Gradual) with no gap
+// between the two pills. Only the columns BEFORE col 5 affect where its
+// button (Gradual) starts, so col 0 (left margin) and col 1 (label) are
+// trimmed to buy back the width col 4 needs to reach a full 160px, keeping
+// the row inside the page.
+#define UI_POWER_COLS                     110, 150, 160, 160, 160, 200, LV_GRID_TEMPLATE_LAST
 #define UI_POWER_ROWS                     60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, LV_GRID_TEMPLATE_LAST
 #define UI_RECORD_COLS                    160, 200, 200, 160, 120, 120, LV_GRID_TEMPLATE_LAST
 #define UI_RECORD_ROWS                    60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, LV_GRID_TEMPLATE_LAST

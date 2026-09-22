@@ -689,6 +689,10 @@ static void page_version_fw_select_toggle_panel(fw_select_t *fw_select) {
         pp_version.on_roller = page_version_on_roller_fw_select;
         pp_version.on_click = page_version_on_click_fw_select;
         pp_version.on_right_button = NULL;
+        // Draw the initial row highlight/focus outline now -- without this the
+        // dialog opened with no row marked as selected until the first dial
+        // move, unlike every other page (which gets it from submenu_enter()).
+        set_select_item(&pp_version.p_arr, pp_version.p_arr.cur);
     } else {
         for (int i = 0; i < pp_version.p_arr.max; ++i) {
             lv_obj_add_flag(pp_version.p_arr.panel[i], LV_OBJ_FLAG_HIDDEN);
