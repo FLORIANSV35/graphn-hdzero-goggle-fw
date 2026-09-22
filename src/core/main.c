@@ -147,12 +147,15 @@ void start_running(void) {
     // initialization (g_init_done) skips the scan, as before.
     bool boot_scan = (g_setting.autoscan.status == SETTING_AUTOSCAN_STATUS_ON) &&
                      !g_setting.autoscan.load_from_boot && (g_init_done == 0);
-    // Startup="Menu": load the picked source/channel the same as "Boot"
-    // would, then open the main menu on the Source page (not the default
-    // Scan Now) on top of it -- same channel either way, the only
-    // difference is whether the menu starts open. Applies uniformly to
-    // every source below (boot_scan already implies status=ON, so it
-    // never overlaps with this).
+    // Startup="Menu": open the main menu on the Source page (not the
+    // default Scan Now) instead of entering the picked source -- applies
+    // uniformly to every source below (boot_scan already implies status=ON,
+    // so it never overlaps with this). Nothing gets tuned/loaded: the
+    // goggles have a single physical display plane (video OR menu, never
+    // both), so loading a channel here would force a visible video/OSD
+    // flash before the menu could even appear. app_exit_menu() -- the
+    // existing Menu->Video back-press handler -- loads the picked source on
+    // demand instead, the first time the user actually leaves the menu.
     bool go_to_menu = (g_setting.autoscan.status == SETTING_AUTOSCAN_STATUS_OFF);
 
     if (source == SETTING_AUTOSCAN_SOURCE_HDZERO) { // HDZero
@@ -162,18 +165,13 @@ void start_running(void) {
             g_autoscan_exit = false;
             page_scannow_set_boot_scan_mode(0); // SCAN_MODE_HDZERO
             pthread_create(&pid, NULL, thread_autoscan, NULL);
+        } else if (go_to_menu) {
+            app_switch_to_menu_keep_source();
+            main_menu_open_page(&pp_source);
         } else {
             app_state_push(APP_STATE_VIDEO);
             boot_progress_start(); // same loading bar as a Source-page pick
             app_switch_to_hdzero(true);
-            if (go_to_menu) {
-                // Same video->menu transition a real back-press triggers
-                // (hides the OSD/video-hole layer, closes the decoder,
-                // restores 1080p, etc.) -- pushing APP_STATE_MAINMENU alone
-                // left the OSD's solid-gray video-hole painted over the menu.
-                app_switch_to_menu();
-                main_menu_open_page(&pp_source); // land on Source, not Scan Now
-            }
         }
 #if defined(HDZBOXPRO) || defined(HDZGOGGLE2)
     } else if (source == SETTING_AUTOSCAN_SOURCE_AUTO_DETECT) {
@@ -182,6 +180,12 @@ void start_running(void) {
             g_autoscan_exit = false;
             page_scannow_set_boot_scan_mode(2); // SCAN_MODE_AUTO (Dual)
             pthread_create(&pid, NULL, thread_autoscan, NULL);
+        } else if (go_to_menu) {
+            // Skips the dual-protocol probe below (it enters video to test
+            // each one) -- lands on Source with whichever source was last
+            // active; app_exit_menu() re-probes properly on the way out.
+            app_switch_to_menu_keep_source();
+            main_menu_open_page(&pp_source);
         } else {
             // Probes both protocols at the current channel and enters video
             // on whichever responds; pushes APP_STATE_VIDEO and sets
@@ -189,10 +193,6 @@ void start_running(void) {
             // rate; the ticker just needs to be running before it blocks.
             boot_progress_start();
             page_source_select_auto_detect();
-            if (go_to_menu) {
-                app_switch_to_menu();
-                main_menu_open_page(&pp_source); // land on Source, not Scan Now
-            }
         }
     } else if (source == SETTING_AUTOSCAN_SOURCE_AV_MODULE && boot_scan) {
         // Boot scan on the built-in analog receiver. (The G1 has no built-in
@@ -202,6 +202,18 @@ void start_running(void) {
         page_scannow_set_boot_scan_mode(1); // SCAN_MODE_ANALOG
         pthread_create(&pid, NULL, thread_autoscan, NULL);
 #endif
+    } else if (go_to_menu) {
+        if (source == SETTING_AUTOSCAN_SOURCE_AV_MODULE) { // AV Module
+            g_hw_stat.av_pal[1] = g_setting.source.analog_format;
+            g_source_info.source = SOURCE_AV_MODULE;
+        } else if (source == SETTING_AUTOSCAN_SOURCE_AV_IN) { // AV in
+            g_hw_stat.av_pal[0] = g_setting.source.analog_format;
+            g_source_info.source = SOURCE_AV_IN;
+        } else { // HDMI in
+            g_source_info.source = SOURCE_HDMI_IN;
+        }
+        app_switch_to_menu_keep_source();
+        main_menu_open_page(&pp_source);
     } else {
         app_state_push(APP_STATE_VIDEO);
         if (source == SETTING_AUTOSCAN_SOURCE_AV_MODULE) { // AV Module
@@ -222,10 +234,6 @@ void start_running(void) {
             //    g_source_info.source = SOURCE_HDZERO;
             //    app_state_push(APP_STATE_MAINMENU);
             //}
-        }
-        if (go_to_menu) {
-            app_switch_to_menu();
-            main_menu_open_page(&pp_source); // land on Source, not Scan Now
         }
     }
 

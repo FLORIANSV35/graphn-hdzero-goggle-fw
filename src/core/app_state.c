@@ -32,7 +32,7 @@ void app_state_push(app_state_t state) {
     g_app_state = state;
 }
 
-void app_switch_to_menu() {
+static void app_switch_to_menu_impl(bool close_source) {
     if (g_app_state == APP_STATE_IMS) {
         ims_save();
         set_slider_value();
@@ -58,6 +58,10 @@ void app_switch_to_menu() {
     osd_show(false);
     g_bShowIMS = false;
     main_menu_show(true);
+
+    if (!close_source) // keep the source tuned/running behind the menu
+        return;
+
     HDZero_Close();
     g_sdcard_det_req = 1;
     if (g_source_info.source == SOURCE_HDMI_IN) // HDMI
@@ -68,6 +72,14 @@ void app_switch_to_menu() {
     scan_core_notify_analog_powered_off();
 #endif
     system_script(REC_STOP_LIVE);
+}
+
+void app_switch_to_menu() {
+    app_switch_to_menu_impl(true);
+}
+
+void app_switch_to_menu_keep_source() {
+    app_switch_to_menu_impl(false);
 }
 
 void app_exit_menu() {

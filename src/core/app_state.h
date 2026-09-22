@@ -38,6 +38,15 @@ extern app_state_t g_app_state;
 void app_state_push(app_state_t state);
 
 void app_switch_to_menu();
+// Same UI-side transition as app_switch_to_menu() (hides the OSD/video-hole
+// layer, switches the display plane to UI, shows the menu) but skips
+// HDZero_Close/rtc6715 reset/etc, which would otherwise tear down a source
+// that's already running. Used by Startup="Menu", which never enters video
+// in the first place (the single physical display plane can't show video
+// and menu at once, so loading a channel here would force a visible flash
+// before the menu could appear) -- app_exit_menu() loads the picked source
+// on demand instead, the first time the user actually leaves the menu.
+void app_switch_to_menu_keep_source();
 void app_exit_menu();
 void app_switch_to_analog(bool is_av_in);
 void app_switch_to_hdmi_in();
