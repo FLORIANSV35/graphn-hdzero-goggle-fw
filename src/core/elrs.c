@@ -111,7 +111,8 @@ static const uint8_t hdzero_channel_map[ANALOG_CHANNEL_NUM] = {
     9, 0, 0, 0, 0, 0, 0, 0,    // E
     10, 11, 0, 12, 0, 0, 0, 7, // F
     1, 2, 3, 4, 5, 6, 7, 8,    // R
-    0, 0, 0, 0, 0, 0, 0, 0,    // L
+    1, 2, 3, 4, 5, 6, 7, 8,    // L (upstream fix: was all zero, so the backpack
+                               // could never switch the VTX to a Lowband channel)
 };
 
 static int get_freq_index(uint16_t const freq) {
