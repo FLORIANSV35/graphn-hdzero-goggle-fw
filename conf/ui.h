@@ -43,14 +43,14 @@ extern "C" {
 #define UI_PAGE_PLAYBACK_ITEM_PREVIEW_W   320
 #define UI_PAGE_PLAYBACK_ITEM_PREVIEW_H   180
 // Wider than UI_PAGE_VIEW_SIZE -- the 3-column grid (960px + gaps) already
-// fills that box almost exactly, so the month list needs extra room on the
+// fills that box almost exactly, so the day list needs extra room on the
 // right of it, not just a slice of the existing page width.
 #define UI_PAGE_PLAYBACK_VIEW_SIZE        1200, 900
-#define UI_PLAYBACK_MONTHS_X              1055
-#define UI_PLAYBACK_MONTHS_Y              0
-#define UI_PLAYBACK_MONTHS_ROW_H          22
-#define UI_PLAYBACK_MONTHS_FONT           &lv_font_montserrat_16
-#define UI_PLAYBACK_MONTHS_VISIBLE        40
+#define UI_PLAYBACK_DAYS_X                1055
+#define UI_PLAYBACK_DAYS_Y                0
+#define UI_PLAYBACK_DAYS_ROW_H            22
+#define UI_PLAYBACK_DAYS_FONT             &lv_font_montserrat_16
+#define UI_PLAYBACK_DAYS_VISIBLE          40
 #define UI_MPLAYER_SCR_WIDTH              1920
 #define UI_MPLAYER_SCR_HEIGHT             1080
 #define UI_MPLAYER_CB_WIDTH               700
@@ -260,13 +260,13 @@ static inline int UI_STATUS_BAR_LABEL_WIDTH() {
 #define UI_PAGE_PLAYBACK_ITEM_PREVIEW_W   200
 #define UI_PAGE_PLAYBACK_ITEM_PREVIEW_H   120
 // The 3-column grid (600px + gaps) leaves enough room in the existing page
-// width for the month list, unlike the FHD targets -- no extra width needed.
+// width for the day list, unlike the FHD targets -- no extra width needed.
 #define UI_PAGE_PLAYBACK_VIEW_SIZE        UI_PAGE_VIEW_SIZE
-#define UI_PLAYBACK_MONTHS_X              660
-#define UI_PLAYBACK_MONTHS_Y              0
-#define UI_PLAYBACK_MONTHS_ROW_H          18
-#define UI_PLAYBACK_MONTHS_FONT           &lv_font_montserrat_14
-#define UI_PLAYBACK_MONTHS_VISIBLE        33
+#define UI_PLAYBACK_DAYS_X                660
+#define UI_PLAYBACK_DAYS_Y                0
+#define UI_PLAYBACK_DAYS_ROW_H            18
+#define UI_PLAYBACK_DAYS_FONT             &lv_font_montserrat_14
+#define UI_PLAYBACK_DAYS_VISIBLE          33
 #define UI_MPLAYER_SCR_WIDTH              1280
 #define UI_MPLAYER_SCR_HEIGHT             720
 #define UI_MPLAYER_CB_WIDTH               460

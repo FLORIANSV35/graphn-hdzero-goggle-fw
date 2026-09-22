@@ -74,9 +74,17 @@ extern "C" {
 #define REC_maxSIZE         (2 * 1024)          //MB
 #define REC_packPATH        "/DCIM/100HDZRO/" //REC_diskPATH "/DCIM/100HDZRO/"
 #define REC_packPREFIX      "hdz_"
+// Favourites (playback page, RIGHT_KEY_CLICK) live in their own subfolder of
+// REC_packPATH rather than a renamed-in-place file, so they show up as a
+// separate, obvious folder when the card is plugged into a computer.
+#define REC_favDIR          "Favorites/"
+// Legacy marker: older firmware favourited a clip by renaming it in place
+// with this prefix instead of moving it. Still checked so any clip a user
+// already favourited that way keeps being protected from the rolling
+// reaper (rolling.c) and gets migrated into REC_favDIR the next time the
+// playback page scans (page_playback.c).
 #define REC_hotPREFIX       "hot_"
 #define REC_starSUFFIX      ".star.txt"
-#define REC_packHotPREFIX   REC_hotPREFIX REC_packPREFIX
 #define REC_packMP4         "mp4"
 #define REC_packTS          "ts"
 #define REC_packJPG         "jpg"

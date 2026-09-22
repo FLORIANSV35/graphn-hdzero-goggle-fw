@@ -49,13 +49,13 @@ static lv_coord_t row_dsc[] = {UI_PLAYBACK_ROWS};
 static media_db_t media_db;
 static pb_ui_item_t pb_ui[ITEMS_LAYOUT_CNT];
 
-static pb_month_entry_t month_list[MAX_MONTH_ENTRIES];
-static int month_count;
-static lv_obj_t *month_labels[UI_PLAYBACK_MONTHS_VISIBLE];
-static lv_obj_t *month_cursor;
-static void build_month_list(void);
-static void update_month_list_ui(void);
-static void update_month_cursor(void);
+static pb_day_entry_t day_list[MAX_DAY_ENTRIES];
+static int day_count;
+static lv_obj_t *day_labels[UI_PLAYBACK_DAYS_VISIBLE];
+static lv_obj_t *day_cursor;
+static void build_day_list(void);
+static void update_day_list_ui(void);
+static void update_day_cursor(void);
 
 /**
  * Displays the status message box.
@@ -147,25 +147,25 @@ static lv_obj_t *page_playback_create(lv_obj_t *parent, panel_arr_t *arr) {
                        pb_ui[pos].y + UI_PAGE_PLAYBACK_ITEM_PREVIEW_H + 10);
     }
 
-    // Month history strip: one "MM-YY" row per distinct month present on the
-    // card, most recent at the top (matches seq order, see build_month_list),
-    // with a cursor tracking whichever month the highlighted clip is in.
-    for (uint32_t i = 0; i < UI_PLAYBACK_MONTHS_VISIBLE; i++) {
-        month_labels[i] = lv_label_create(cont);
-        lv_obj_set_style_text_font(month_labels[i], UI_PLAYBACK_MONTHS_FONT, 0);
-        lv_obj_set_style_text_color(month_labels[i], lv_color_hex(TEXT_COLOR_DEFAULT), 0);
-        lv_obj_set_pos(month_labels[i], UI_PLAYBACK_MONTHS_X + 14, UI_PLAYBACK_MONTHS_Y + i * UI_PLAYBACK_MONTHS_ROW_H);
-        lv_obj_add_flag(month_labels[i], LV_OBJ_FLAG_HIDDEN);
+    // Day history strip: one "DD-MM-YY" row per distinct day present on the
+    // card, most recent at the top (matches seq order, see build_day_list),
+    // with a cursor tracking whichever day the highlighted clip is on.
+    for (uint32_t i = 0; i < UI_PLAYBACK_DAYS_VISIBLE; i++) {
+        day_labels[i] = lv_label_create(cont);
+        lv_obj_set_style_text_font(day_labels[i], UI_PLAYBACK_DAYS_FONT, 0);
+        lv_obj_set_style_text_color(day_labels[i], lv_color_hex(TEXT_COLOR_DEFAULT), 0);
+        lv_obj_set_pos(day_labels[i], UI_PLAYBACK_DAYS_X + 14, UI_PLAYBACK_DAYS_Y + i * UI_PLAYBACK_DAYS_ROW_H);
+        lv_obj_add_flag(day_labels[i], LV_OBJ_FLAG_HIDDEN);
     }
 
-    month_cursor = lv_obj_create(cont);
-    lv_obj_set_size(month_cursor, 6, UI_PLAYBACK_MONTHS_ROW_H - 4);
-    lv_obj_set_style_bg_color(month_cursor, lv_color_hex(UI_COLOR_ACCENT), 0);
-    lv_obj_set_style_bg_opa(month_cursor, LV_OPA_COVER, 0);
-    lv_obj_set_style_border_width(month_cursor, 0, 0);
-    lv_obj_set_style_radius(month_cursor, 2, 0);
-    lv_obj_set_pos(month_cursor, UI_PLAYBACK_MONTHS_X, UI_PLAYBACK_MONTHS_Y + 2);
-    lv_obj_add_flag(month_cursor, LV_OBJ_FLAG_HIDDEN);
+    day_cursor = lv_obj_create(cont);
+    lv_obj_set_size(day_cursor, 6, UI_PLAYBACK_DAYS_ROW_H - 4);
+    lv_obj_set_style_bg_color(day_cursor, lv_color_hex(UI_COLOR_ACCENT), 0);
+    lv_obj_set_style_bg_opa(day_cursor, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(day_cursor, 0, 0);
+    lv_obj_set_style_radius(day_cursor, 2, 0);
+    lv_obj_set_pos(day_cursor, UI_PLAYBACK_DAYS_X, UI_PLAYBACK_DAYS_Y + 2);
+    lv_obj_add_flag(day_cursor, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_t *label = lv_label_create(cont);
     snprintf(buf, sizeof(buf), "*%s\n**%s", _lang("Long press the Enter button to exit"), _lang("Long press the Func button to delete"));
@@ -238,31 +238,24 @@ static media_file_node_t *get_list(int seq) {
     return &media_db.list[seq_reserve];
 }
 
+// Directory a clip actually lives in -- the main clip folder, or its
+// REC_favDIR subfolder for favourites. Every path built from a
+// media_file_node_t goes through this instead of assuming MEDIA_FILES_DIR.
+static void node_dir(const media_file_node_t *pnode, char *out, size_t outsz) {
+    if (pnode->favorite)
+        snprintf(out, outsz, "%s" REC_favDIR, MEDIA_FILES_DIR);
+    else
+        snprintf(out, outsz, "%s", MEDIA_FILES_DIR);
+}
+
 static bool get_seleteced(int seq, char *fname) {
     media_file_node_t *pnode = get_list(seq);
     if (!pnode)
         return false;
-    sprintf(fname, "%s%s", MEDIA_FILES_DIR, pnode->filename);
+    char dir[300];
+    node_dir(pnode, dir, sizeof(dir));
+    sprintf(fname, "%s%s", dir, pnode->filename);
     return true;
-}
-
-// Oldest-to-newest by modification time, favourites (hot_ prefixed) mixed in
-// chronologically like any other clip -- get_list() below reverses this so
-// seq=0 is the most recent file overall. Previously bucketed every favourite
-// before every non-favourite (then alphabetical within each bucket), which
-// buried favourites older than the most recent non-favourite clip at the
-// very end of the list regardless of how recent they actually were.
-int hot_alphasort(const struct dirent **a, const struct dirent **b) {
-    char path_a[512], path_b[512];
-    snprintf(path_a, sizeof(path_a), "%s%s", MEDIA_FILES_DIR, (*a)->d_name);
-    snprintf(path_b, sizeof(path_b), "%s%s", MEDIA_FILES_DIR, (*b)->d_name);
-
-    time_t ta = fs_mtime(path_a);
-    time_t tb = fs_mtime(path_b);
-    if (ta != tb) {
-        return (ta < tb) ? -1 : 1;
-    }
-    return strcoll((*a)->d_name, (*b)->d_name);
 }
 
 static bool dvr_has_stars(const char *filename) {
@@ -272,35 +265,43 @@ static bool dvr_has_stars(const char *filename) {
     return fs_file_exists(star_file);
 }
 
-static int walk_sdcard() {
-    char fname[512];
+typedef struct {
+    char name[128]; // original filename, no directory component
+    bool favorite;
+    time_t mtime;
+} pb_scan_entry_t;
 
-    media_db.count = 0;
-    media_db.cur_sel = 0;
+static int pb_scan_compare(const void *a, const void *b) {
+    const pb_scan_entry_t *ea = a;
+    const pb_scan_entry_t *eb = b;
+    if (ea->mtime != eb->mtime)
+        return (ea->mtime < eb->mtime) ? -1 : 1;
+    return strcoll(ea->name, eb->name);
+}
 
-    struct dirent **namelist;
-    int count = scandir(MEDIA_FILES_DIR, &namelist, NULL, hot_alphasort);
-    if (count == -1) {
-        return 0;
-    }
+// Appends every clip in `dir` (non-recursive) to `out`, starting at
+// `out_count`, up to `max` total. Shared by the main clip folder and its
+// REC_favDIR subfolder -- the only difference between the two is the
+// `favorite` tag each entry gets.
+static int pb_scan_dir(const char *dir, bool favorite, pb_scan_entry_t *out, int out_count, int max) {
+    DIR *fd = opendir(dir);
+    if (!fd)
+        return out_count;
 
-    for (size_t i = 0; i < count; i++) {
-        struct dirent *in_file = namelist[i];
-        if (in_file->d_name[0] == '.') {
+    struct dirent *in_file;
+    while (out_count < max && (in_file = readdir(fd))) {
+        if (in_file->d_name[0] == '.')
             continue;
-        }
 
         const char *dot = strrchr(in_file->d_name, '.');
-        if (dot == NULL) {
-            // '.' not found
+        if (dot == NULL)
             continue;
-        }
 
-        if (strcasecmp(dot, "." REC_packTS) != 0 && strcasecmp(dot, "." REC_packMP4) != 0) {
+        if (strcasecmp(dot, "." REC_packTS) != 0 && strcasecmp(dot, "." REC_packMP4) != 0)
             continue;
-        }
 
-        snprintf(fname, sizeof(fname), "%s%s", MEDIA_FILES_DIR, in_file->d_name);
+        char fname[512];
+        snprintf(fname, sizeof(fname), "%s%s", dir, in_file->d_name);
 
         long size = fs_filesize(fname);
         size >>= 20; // in MB
@@ -309,134 +310,171 @@ static int walk_sdcard() {
             continue;
         }
 
-        if (media_db.count >= MAX_VIDEO_FILES) {
-            LOGI("max video file cnt reached %d,skipped", MAX_VIDEO_FILES);
+        snprintf(out[out_count].name, sizeof(out[out_count].name), "%s", in_file->d_name);
+        out[out_count].favorite = favorite;
+        out[out_count].mtime = fs_mtime(fname);
+        out_count++;
+    }
+    closedir(fd);
+
+    return out_count;
+}
+
+// One-time sweep for anyone upgrading from the old hot_-prefix scheme
+// (renamed in place, same folder): relocate any leftover hot_-prefixed clip,
+// and its thumbnail/star companions, into REC_favDIR, stripping the prefix.
+// A no-op once none are left, so safe to run on every walk_sdcard().
+static void migrate_legacy_favorites(const char *favdir) {
+    DIR *fd = opendir(MEDIA_FILES_DIR);
+    if (!fd)
+        return;
+
+    size_t const hot_len = strlen(REC_hotPREFIX);
+    bool made_dir = false;
+    struct dirent *in_file;
+    while ((in_file = readdir(fd))) {
+        if (strncmp(in_file->d_name, REC_hotPREFIX, hot_len) != 0)
             continue;
+
+        const char *dot = strrchr(in_file->d_name, '.');
+        if (!dot || (strcasecmp(dot, "." REC_packTS) != 0 && strcasecmp(dot, "." REC_packMP4) != 0))
+            continue;
+
+        char current_label[68]; // e.g. "hot_hdz_0001"
+        snprintf(current_label, sizeof(current_label), "%.*s", (int)(dot - in_file->d_name), in_file->d_name);
+        const char *stripped_name = in_file->d_name + hot_len; // "hdz_0001.ts"
+        const char *stripped_label = current_label + hot_len;  // "hdz_0001"
+
+        char dst[768];
+        snprintf(dst, sizeof(dst), "%s%s", favdir, stripped_name);
+        if (fs_file_exists(dst))
+            // Same-named favourite already there -- leave this one where it
+            // is rather than clobber it.
+            continue;
+
+        if (!made_dir) {
+            char mkdir_cmd[320];
+            snprintf(mkdir_cmd, sizeof(mkdir_cmd), "mkdir -p %s", favdir);
+            system_exec(mkdir_cmd);
+            made_dir = true;
         }
+
+        char cmd[1024];
+        snprintf(cmd, sizeof(cmd), "mv %s%s %s", MEDIA_FILES_DIR, in_file->d_name, dst);
+        system_exec(cmd);
+        snprintf(cmd, sizeof(cmd), "mv %s%s." REC_packJPG " %s%s." REC_packJPG " 2>/dev/null",
+                 MEDIA_FILES_DIR, current_label, favdir, stripped_label);
+        system_exec(cmd);
+        snprintf(cmd, sizeof(cmd), "mv %s%s" REC_starSUFFIX " %s%s" REC_starSUFFIX " 2>/dev/null",
+                 MEDIA_FILES_DIR, in_file->d_name, favdir, stripped_name);
+        system_exec(cmd);
+    }
+    closedir(fd);
+}
+
+static int walk_sdcard() {
+    char fname[512];
+    char favdir[300];
+    snprintf(favdir, sizeof(favdir), "%s" REC_favDIR, MEDIA_FILES_DIR);
+
+    migrate_legacy_favorites(favdir);
+
+    media_db.count = 0;
+    media_db.cur_sel = 0;
+
+    static pb_scan_entry_t entries[MAX_VIDEO_FILES];
+    int count = pb_scan_dir(MEDIA_FILES_DIR, false, entries, 0, MAX_VIDEO_FILES);
+    count = pb_scan_dir(favdir, true, entries, count, MAX_VIDEO_FILES);
+    qsort(entries, count, sizeof(entries[0]), pb_scan_compare);
+
+    for (int i = 0; i < count; i++) {
+        pb_scan_entry_t *entry = &entries[i];
+        const char *dot = strrchr(entry->name, '.');
 
         media_file_node_t *pnode = &media_db.list[media_db.count];
         ZeroMemory(pnode->filename, sizeof(pnode->filename));
         ZeroMemory(pnode->label, sizeof(pnode->label));
         ZeroMemory(pnode->ext, sizeof(pnode->ext));
-        strcpy(pnode->filename, in_file->d_name);
-        strncpy(pnode->label, in_file->d_name, dot - in_file->d_name);
+        strcpy(pnode->filename, entry->name);
+        strncpy(pnode->label, entry->name, dot - entry->name);
         strcpy(pnode->ext, dot + 1);
+        pnode->favorite = entry->favorite;
+        pnode->mtime = entry->mtime;
+
+        snprintf(fname, sizeof(fname), "%s%s", entry->favorite ? favdir : MEDIA_FILES_DIR, entry->name);
         pnode->star = dvr_has_stars(fname);
-        pnode->mtime = fs_mtime(fname);
+        pnode->size = fs_filesize(fname) >> 20;
 
-        pnode->size = size;
-
-        LOGI("%d: %s-%dMB", media_db.count, pnode->filename, size);
+        LOGI("%d: %s-%dMB%s", media_db.count, pnode->filename, pnode->size, entry->favorite ? " (favorite)" : "");
 
         media_db.count++;
     }
 
-    for (size_t i = 0; i < count; i++) {
-        free(namelist[i]);
-    }
-    free(namelist);
-
-    // copy all thumbnail files to /tmp
-    snprintf(fname, sizeof(fname), "cp %s*." REC_packJPG " %s", MEDIA_FILES_DIR, TMP_DIR);
+    // copy all thumbnail files (both folders) to /tmp
+    snprintf(fname, sizeof(fname), "cp %s*." REC_packJPG " %s 2>/dev/null; cp %s*." REC_packJPG " %s 2>/dev/null",
+             MEDIA_FILES_DIR, TMP_DIR, favdir, TMP_DIR);
     system_exec(fname);
 
-    build_month_list();
-    update_month_list_ui();
+    build_day_list();
+    update_day_list_ui();
 
     return media_db.count;
 }
 
 // Walks seq order (0 = most recent, see get_list()) and records where each
-// calendar month starts. Capped at UI_PLAYBACK_MONTHS_VISIBLE (and the
-// backing array's MAX_MONTH_ENTRIES): older months beyond that just don't
-// get a row rather than overflowing the list.
-static void build_month_list(void) {
-    month_count = 0;
-    for (int seq = 0; seq < media_db.count && month_count < UI_PLAYBACK_MONTHS_VISIBLE &&
-                       month_count < MAX_MONTH_ENTRIES;
+// calendar day starts. Capped at UI_PLAYBACK_DAYS_VISIBLE (and the backing
+// array's MAX_DAY_ENTRIES): older days beyond that just don't get a row
+// rather than overflowing the list.
+static void build_day_list(void) {
+    day_count = 0;
+    for (int seq = 0; seq < media_db.count && day_count < UI_PLAYBACK_DAYS_VISIBLE &&
+                       day_count < MAX_DAY_ENTRIES;
          seq++) {
         media_file_node_t *pnode = get_list(seq);
         struct tm tmv;
         localtime_r(&pnode->mtime, &tmv);
 
-        char label[8];
-        snprintf(label, sizeof(label), "%02d-%02d", tmv.tm_mon + 1, tmv.tm_year % 100);
+        char label[10];
+        snprintf(label, sizeof(label), "%02d-%02d-%02d", tmv.tm_mday, tmv.tm_mon + 1, tmv.tm_year % 100);
 
-        if (month_count == 0 || strcmp(month_list[month_count - 1].label, label) != 0) {
-            snprintf(month_list[month_count].label, sizeof(month_list[month_count].label), "%s", label);
-            month_list[month_count].start_seq = seq;
-            month_count++;
+        if (day_count == 0 || strcmp(day_list[day_count - 1].label, label) != 0) {
+            snprintf(day_list[day_count].label, sizeof(day_list[day_count].label), "%s", label);
+            day_list[day_count].start_seq = seq;
+            day_count++;
         }
     }
 }
 
-static void update_month_list_ui(void) {
-    for (uint32_t i = 0; i < UI_PLAYBACK_MONTHS_VISIBLE; i++) {
-        if ((int)i < month_count) {
-            lv_label_set_text(month_labels[i], month_list[i].label);
-            lv_obj_clear_flag(month_labels[i], LV_OBJ_FLAG_HIDDEN);
+static void update_day_list_ui(void) {
+    for (uint32_t i = 0; i < UI_PLAYBACK_DAYS_VISIBLE; i++) {
+        if ((int)i < day_count) {
+            lv_label_set_text(day_labels[i], day_list[i].label);
+            lv_obj_clear_flag(day_labels[i], LV_OBJ_FLAG_HIDDEN);
         } else {
-            lv_obj_add_flag(month_labels[i], LV_OBJ_FLAG_HIDDEN);
+            lv_obj_add_flag(day_labels[i], LV_OBJ_FLAG_HIDDEN);
         }
     }
 }
 
-// Repoints the cursor at whichever month media_db.cur_sel currently falls
-// in. month_list is ordered by increasing start_seq (top = most recent), so
-// the target row is the last one whose start_seq doesn't exceed cur_sel.
-static void update_month_cursor(void) {
-    if (month_count == 0) {
-        lv_obj_add_flag(month_cursor, LV_OBJ_FLAG_HIDDEN);
+// Repoints the cursor at whichever day media_db.cur_sel currently falls on.
+// day_list is ordered by increasing start_seq (top = most recent), so the
+// target row is the last one whose start_seq doesn't exceed cur_sel.
+static void update_day_cursor(void) {
+    if (day_count == 0) {
+        lv_obj_add_flag(day_cursor, LV_OBJ_FLAG_HIDDEN);
         return;
     }
 
     int idx = 0;
-    for (int i = 0; i < month_count; i++) {
-        if (month_list[i].start_seq <= media_db.cur_sel)
+    for (int i = 0; i < day_count; i++) {
+        if (day_list[i].start_seq <= media_db.cur_sel)
             idx = i;
         else
             break;
     }
 
-    lv_obj_clear_flag(month_cursor, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_set_pos(month_cursor, UI_PLAYBACK_MONTHS_X, UI_PLAYBACK_MONTHS_Y + idx * UI_PLAYBACK_MONTHS_ROW_H + 2);
-}
-
-static int find_next_available_hot_index() {
-    DIR *fd = opendir(MEDIA_FILES_DIR);
-    if (!fd) {
-        return 1;
-    }
-
-    int result = 0;
-    struct dirent *in_file;
-    while ((in_file = readdir(fd))) {
-        if (in_file->d_name[0] == '.' || strncmp(in_file->d_name, REC_hotPREFIX, 4) != 0) {
-            continue;
-        }
-
-        const char *dot = strrchr(in_file->d_name, '.');
-        if (dot == NULL) {
-            // '.' not found
-            continue;
-        }
-
-        if (strcasecmp(dot, "." REC_packTS) != 0 && strcasecmp(dot, "." REC_packMP4) != 0) {
-            continue;
-        }
-
-        int index = 0;
-        if (sscanf(in_file->d_name, REC_packHotPREFIX "%d", &index) != 1) {
-            continue;
-        }
-
-        if (index > result) {
-            result = index;
-        }
-    }
-    closedir(fd);
-
-    return result + 1;
+    lv_obj_clear_flag(day_cursor, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_pos(day_cursor, UI_PLAYBACK_DAYS_X, UI_PLAYBACK_DAYS_Y + idx * UI_PLAYBACK_DAYS_ROW_H + 2);
 }
 
 static void update_page() {
@@ -462,14 +500,17 @@ static void update_page() {
             else
                 pb_ui[i].state = ITEM_STATE_INVISIBLE;
 
-            show_pb_item(i, pnode->label, pnode->star);
+            // Favourites no longer carry a visible hot_ prefix in the label
+            // (they live in their own folder instead), so reuse the star
+            // icon to keep them distinguishable in the grid.
+            show_pb_item(i, pnode->label, pnode->star || pnode->favorite);
         } else {
             pb_ui[i].state = ITEM_STATE_INVISIBLE;
             show_pb_item(i, NULL, false);
         }
     }
 
-    update_month_cursor();
+    update_day_cursor();
 }
 
 static void update_item(uint8_t cur_pos, uint8_t lst_pos) {
@@ -486,27 +527,39 @@ static void update_item(uint8_t cur_pos, uint8_t lst_pos) {
     lv_obj_add_style(pb_ui[lst_pos]._img, &style_pb_dark, LV_PART_MAIN);
 }
 
+// Moves a clip (and its thumbnail/star companions) into REC_favDIR, keeping
+// its original filename -- favourites become their own folder rather than a
+// renamed file mixed in with everything else, so they're easy to find when
+// the card is plugged into a computer.
 static void mark_video_file(int const seq) {
     media_file_node_t const *const pnode = get_list(seq);
-    if (!pnode) {
-        return;
-    }
-    if (strncmp(pnode->filename, REC_hotPREFIX, 4) == 0) {
-        // file already marked hot
+    if (!pnode || pnode->favorite) {
+        // already a favourite
         return;
     }
 
-    const int index = find_next_available_hot_index();
+    char favdir[300];
+    snprintf(favdir, sizeof(favdir), "%s" REC_favDIR, MEDIA_FILES_DIR);
 
-    char cmd[256];
-    char newLabel[68];
-    snprintf(newLabel, sizeof(newLabel), "%s%s", REC_hotPREFIX, pnode->label);
+    char dst[512];
+    snprintf(dst, sizeof(dst), "%s%s", favdir, pnode->filename);
+    if (fs_file_exists(dst)) {
+        // Name collision (e.g. the DVR index counter wrapped) -- refuse
+        // rather than silently overwriting an existing favourite.
+        LOGE("mark_video_file: %s already exists, skipping", dst);
+        return;
+    }
 
-    snprintf(cmd, sizeof(cmd), "mv %s%s %s%s.%s", MEDIA_FILES_DIR, pnode->filename, MEDIA_FILES_DIR, newLabel, pnode->ext);
+    char mkdir_cmd[320];
+    snprintf(mkdir_cmd, sizeof(mkdir_cmd), "mkdir -p %s", favdir);
+    system_exec(mkdir_cmd);
+
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "mv %s%s %s", MEDIA_FILES_DIR, pnode->filename, favdir);
     system_exec(cmd);
-    snprintf(cmd, sizeof(cmd), "mv %s%s." REC_packJPG " %s%s." REC_packJPG, MEDIA_FILES_DIR, pnode->label, MEDIA_FILES_DIR, newLabel);
+    snprintf(cmd, sizeof(cmd), "mv %s%s." REC_packJPG " %s 2>/dev/null", MEDIA_FILES_DIR, pnode->label, favdir);
     system_exec(cmd);
-    snprintf(cmd, sizeof(cmd), "mv %s%s" REC_starSUFFIX " %s%s.%s" REC_starSUFFIX, MEDIA_FILES_DIR, pnode->filename, MEDIA_FILES_DIR, newLabel, pnode->ext);
+    snprintf(cmd, sizeof(cmd), "mv %s%s" REC_starSUFFIX " %s 2>/dev/null", MEDIA_FILES_DIR, pnode->filename, favdir);
     system_exec(cmd);
 
     walk_sdcard();
@@ -521,8 +574,10 @@ static void delete_video_file(int seq) {
         return;
     }
 
-    char cmd[128];
-    snprintf(cmd, sizeof(cmd), "rm %s%s.*", MEDIA_FILES_DIR, pnode->label);
+    char dir[300];
+    node_dir(pnode, dir, sizeof(dir));
+    char cmd[400];
+    snprintf(cmd, sizeof(cmd), "rm %s%s.*", dir, pnode->label);
 
     if (system_exec(cmd) != -1) {
         walk_sdcard();
@@ -592,7 +647,7 @@ void pb_key(uint8_t const key) {
 
         if (lst_page_num == cur_page_num) {
             update_item(cur_pos, lst_pos);
-            update_month_cursor();
+            update_day_cursor();
         } else {
             update_page();
         }
@@ -617,7 +672,7 @@ void pb_key(uint8_t const key) {
 
         if (lst_page_num == cur_page_num) {
             update_item(cur_pos, lst_pos);
-            update_month_cursor();
+            update_day_cursor();
         } else {
             update_page();
         }
