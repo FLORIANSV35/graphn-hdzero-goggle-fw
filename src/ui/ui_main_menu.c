@@ -442,6 +442,18 @@ void main_menu_init(void) {
     lv_obj_set_style_radius(root_page, 0, 0);
 
     lv_menu_set_sidebar_page(menu, root_page);
+#ifndef HDZBOXPRO
+    if (ui_theme_pills()) {
+        // LVGL's stock theme puts its own 1px divider on the sidebar
+        // container (10% opacity, fixed to the stock light/dark theme's text
+        // color) between the sidebar and the page, regardless of our own
+        // colors -- it doesn't come from anything in conf/ui.h or ui_theme.c,
+        // so no theme change here ever touches it. ->sidebar only exists
+        // once the sidebar page is set (NULL before that -- do this after,
+        // not next to the rest of the menu's own styling above).
+        lv_obj_set_style_border_width(((lv_menu_t *)menu)->sidebar, 0, 0);
+    }
+#endif
     lv_event_send(lv_obj_get_child(lv_obj_get_child(lv_menu_get_cur_sidebar_page(menu), 0), 0), LV_EVENT_CLICKED, NULL);
     lv_obj_add_flag(lv_menu_get_sidebar_header(menu), LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(lv_menu_get_cur_sidebar_page(menu), LV_OBJ_FLAG_SCROLLABLE);
