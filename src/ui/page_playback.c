@@ -218,14 +218,21 @@ static bool get_seleteced(int seq, char *fname) {
     return true;
 }
 
+// Oldest-to-newest by modification time, favourites (hot_ prefixed) mixed in
+// chronologically like any other clip -- get_list() below reverses this so
+// seq=0 is the most recent file overall. Previously bucketed every favourite
+// before every non-favourite (then alphabetical within each bucket), which
+// buried favourites older than the most recent non-favourite clip at the
+// very end of the list regardless of how recent they actually were.
 int hot_alphasort(const struct dirent **a, const struct dirent **b) {
-    const bool a_hot = strncmp((*a)->d_name, REC_hotPREFIX, 4) == 0;
-    const bool b_hot = strncmp((*b)->d_name, REC_hotPREFIX, 4) == 0;
-    if (a_hot && !b_hot) {
-        return -1;
-    }
-    if (!a_hot && b_hot) {
-        return 1;
+    char path_a[512], path_b[512];
+    snprintf(path_a, sizeof(path_a), "%s%s", MEDIA_FILES_DIR, (*a)->d_name);
+    snprintf(path_b, sizeof(path_b), "%s%s", MEDIA_FILES_DIR, (*b)->d_name);
+
+    time_t ta = fs_mtime(path_a);
+    time_t tb = fs_mtime(path_b);
+    if (ta != tb) {
+        return (ta < tb) ? -1 : 1;
     }
     return strcoll((*a)->d_name, (*b)->d_name);
 }

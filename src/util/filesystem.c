@@ -75,6 +75,14 @@ long fs_filesize(const char *filename) {
     return st.st_size;
 }
 
+time_t fs_mtime(const char *filename) {
+    struct stat st;
+    if (stat(filename, &st) != 0) {
+        return 0;
+    }
+    return st.st_mtime;
+}
+
 const char *fs_basename(const char *path) {
     for (int i = strlen(path); i >= 0; --i) {
         if (path[i] == '/') {
