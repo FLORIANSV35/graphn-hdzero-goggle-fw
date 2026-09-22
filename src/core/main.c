@@ -148,10 +148,11 @@ void start_running(void) {
     bool boot_scan = (g_setting.autoscan.status == SETTING_AUTOSCAN_STATUS_ON) &&
                      !g_setting.autoscan.load_from_boot && (g_init_done == 0);
     // Startup="Menu": load the picked source/channel the same as "Boot"
-    // would, then open the main menu on top of it -- same channel either
-    // way, the only difference is whether the menu starts open. Applies
-    // uniformly to every source below (boot_scan already implies status=ON,
-    // so it never overlaps with this).
+    // would, then open the main menu on the Source page (not the default
+    // Scan Now) on top of it -- same channel either way, the only
+    // difference is whether the menu starts open. Applies uniformly to
+    // every source below (boot_scan already implies status=ON, so it
+    // never overlaps with this).
     bool go_to_menu = (g_setting.autoscan.status == SETTING_AUTOSCAN_STATUS_OFF);
 
     if (source == SETTING_AUTOSCAN_SOURCE_HDZERO) { // HDZero
@@ -165,8 +166,14 @@ void start_running(void) {
             app_state_push(APP_STATE_VIDEO);
             boot_progress_start(); // same loading bar as a Source-page pick
             app_switch_to_hdzero(true);
-            if (go_to_menu)
-                app_state_push(APP_STATE_MAINMENU);
+            if (go_to_menu) {
+                // Same video->menu transition a real back-press triggers
+                // (hides the OSD/video-hole layer, closes the decoder,
+                // restores 1080p, etc.) -- pushing APP_STATE_MAINMENU alone
+                // left the OSD's solid-gray video-hole painted over the menu.
+                app_switch_to_menu();
+                main_menu_open_page(&pp_source); // land on Source, not Scan Now
+            }
         }
 #if defined(HDZBOXPRO) || defined(HDZGOGGLE2)
     } else if (source == SETTING_AUTOSCAN_SOURCE_AUTO_DETECT) {
@@ -182,8 +189,10 @@ void start_running(void) {
             // rate; the ticker just needs to be running before it blocks.
             boot_progress_start();
             page_source_select_auto_detect();
-            if (go_to_menu)
-                app_state_push(APP_STATE_MAINMENU);
+            if (go_to_menu) {
+                app_switch_to_menu();
+                main_menu_open_page(&pp_source); // land on Source, not Scan Now
+            }
         }
     } else if (source == SETTING_AUTOSCAN_SOURCE_AV_MODULE && boot_scan) {
         // Boot scan on the built-in analog receiver. (The G1 has no built-in
@@ -214,8 +223,10 @@ void start_running(void) {
             //    app_state_push(APP_STATE_MAINMENU);
             //}
         }
-        if (go_to_menu)
-            app_state_push(APP_STATE_MAINMENU);
+        if (go_to_menu) {
+            app_switch_to_menu();
+            main_menu_open_page(&pp_source); // land on Source, not Scan Now
+        }
     }
 
     // ELRS backpack is brought up later, once the goggle has finished booting

@@ -49,6 +49,10 @@ void main_menu_init();
 void main_menu_update();
 void main_menu_show(bool is_show);
 bool main_menu_is_shown(void);
+// Open the menu directly on a given page (tab highlight, row selection and
+// its .enter hook all run as if the sidebar entry had been clicked) --
+// e.g. Startup="Menu" landing on Source instead of defaulting to Scan Now.
+void main_menu_open_page(page_pack_t *pp);
 
 void menu_nav(uint8_t key);
 

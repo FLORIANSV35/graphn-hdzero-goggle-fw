@@ -308,6 +308,29 @@ void main_menu_show(bool is_show) {
     }
 }
 
+void main_menu_open_page(page_pack_t *pp) {
+    if (!pp || !pp->page)
+        return;
+    lv_menu_set_page(menu, pp->page);
+    // Same tab highlight / row selection / .enter() a real sidebar click
+    // triggers -- submenu_enter() derives the page from the menu itself, so
+    // it picks up the switch made just above.
+    submenu_enter();
+    // Every other caller that pushes APP_STATE_MAINMENU pairs it with this
+    // (thread_autoscan, the back-navigation in input_device.c): the state
+    // alone doesn't reveal the menu widget, whatever hid it last (entering
+    // video) does that with its own, separate call.
+    main_menu_show(true);
+    // Called from start_running(), this runs before the main loop starts
+    // ticking lv_timer_handler() on its own (see thread_boot_progress's own
+    // comment on the same restriction) -- without an explicit pump here the
+    // widget tree above is correct but never actually reaches the screen,
+    // and whatever was on screen before (the freshly-opened video) stays put
+    // until the first regular frame, by which point something else may have
+    // already drawn over it.
+    lv_timer_handler();
+}
+
 static void main_menu_create_entry(lv_obj_t *menu, lv_obj_t *section, page_pack_t *pp) {
     LOGD("creating main menu entry %s", pp->name);
 
