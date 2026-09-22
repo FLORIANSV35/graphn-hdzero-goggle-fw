@@ -494,7 +494,15 @@ void main_menu_init(void) {
         lv_obj_set_style_border_width(((lv_menu_t *)menu)->sidebar, 0, 0);
     }
 #endif
-    lv_event_send(lv_obj_get_child(lv_obj_get_child(lv_menu_get_cur_sidebar_page(menu), 0), 0), LV_EVENT_CLICKED, NULL);
+    // Pre-select whichever page start_running() will actually land on, not
+    // always Scan Now: the panel can power on and show this initial frame
+    // before start_running() gets a chance to switch pages, so defaulting to
+    // Scan Now here always showed it for a beat first on Startup="Menu" --
+    // clicking straight to Source instead skips that intermediate frame.
+    lv_obj_t *default_entry = (g_setting.autoscan.status == SETTING_AUTOSCAN_STATUS_OFF)
+                                  ? lv_obj_get_parent(pp_source.label)
+                                  : lv_obj_get_child(lv_obj_get_child(lv_menu_get_cur_sidebar_page(menu), 0), 0);
+    lv_event_send(default_entry, LV_EVENT_CLICKED, NULL);
     lv_obj_add_flag(lv_menu_get_sidebar_header(menu), LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(lv_menu_get_cur_sidebar_page(menu), LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_flag(root_page, LV_OBJ_FLAG_SCROLLABLE);
