@@ -311,16 +311,33 @@ void main_menu_show(bool is_show) {
 void main_menu_open_page(page_pack_t *pp) {
     if (!pp || !pp->page)
         return;
-    lv_menu_set_page(menu, pp->page);
-    // Same tab highlight / row selection / .enter() a real sidebar click
-    // triggers -- submenu_enter() derives the page from the menu itself, so
-    // it picks up the switch made just above.
-    submenu_enter();
     // Every other caller that pushes APP_STATE_MAINMENU pairs it with this
     // (thread_autoscan, the back-navigation in input_device.c): the state
     // alone doesn't reveal the menu widget, whatever hid it last (entering
-    // video) does that with its own, separate call.
+    // video) does that with its own, separate call. Do this FIRST, while
+    // main_page is still whatever it was before (or nothing, at boot): it
+    // runs menu_reinit(), which deselects the CURRENT tab's pill -- calling
+    // it after the click below would immediately undo the selection that
+    // click sets up, since both act on the same lv_menu selected_tab field.
     main_menu_show(true);
+
+    // Same synthetic click menu_nav() sends when the roller highlights a
+    // sidebar row: this is what actually repoints lv_menu's internal
+    // selected_tab (and calls lv_menu_set_page()) to pp's own row.
+    // lv_menu_set_page() alone only re-applies CHECKED styling to whichever
+    // tab selected_tab ALREADY is -- it never repoints that field, so the
+    // previously-selected tab (e.g. Scan Now, selected by default at boot)
+    // stayed lit as a solid pill while pp's own tab never got the pill
+    // styling at all (leaving both mislabeled: Scan Now's text invisible
+    // against its own now-permanent highlight, Source's unlit and unreadable).
+    lv_obj_t *entry = lv_obj_get_parent(pp->label);
+    lv_event_send(entry, LV_EVENT_CLICKED, NULL);
+
+    // Tab highlight, row selection and .enter() -- same as pressing Enter on
+    // this row from the sidebar would trigger.
+    app_state_push(APP_STATE_SUBMENU);
+    submenu_enter();
+
     // Called from start_running(), this runs before the main loop starts
     // ticking lv_timer_handler() on its own (see thread_boot_progress's own
     // comment on the same restriction) -- without an explicit pump here the
