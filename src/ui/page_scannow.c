@@ -127,14 +127,14 @@ static void update_mode_btn_focus(void) {
         if (!mode_btns[i]) continue;
         bool is_focused = page_focused && (i == idle_sel);
         lv_obj_set_style_bg_color(mode_btns[i],
-                                  is_focused ? lv_color_make(0, 0xA0, 0)
-                                             : lv_color_make(0x40, 0x40, 0x40),
+                                  is_focused ? lv_color_hex(UI_COLOR_FOCUS)
+                                             : lv_color_hex(UI_COLOR_IDLE_BTN),
                                   LV_PART_MAIN);
         lv_obj_set_style_bg_opa(mode_btns[i], LV_OPA_100, LV_PART_MAIN);
         lv_obj_set_style_border_width(mode_btns[i],
                                       is_focused ? 2 : 0, LV_PART_MAIN);
         lv_obj_set_style_border_color(mode_btns[i],
-                                      lv_color_make(0xFF, 0xFF, 0xFF),
+                                      lv_color_hex(TEXT_COLOR_DEFAULT),
                                       LV_PART_MAIN);
         if (is_focused) {
             lv_obj_add_state(mode_btns[i], LV_STATE_FOCUSED);
@@ -145,13 +145,13 @@ static void update_mode_btn_focus(void) {
     if (last_scan_btn) {
         bool sel = page_focused && (idle_sel == SCAN_MODE_COUNT);
         lv_obj_set_style_bg_color(last_scan_btn,
-                                  sel ? lv_color_make(0, 0xA0, 0)
-                                      : lv_color_make(0x40, 0x40, 0x40),
+                                  sel ? lv_color_hex(UI_COLOR_FOCUS)
+                                      : lv_color_hex(UI_COLOR_IDLE_BTN),
                                   LV_PART_MAIN);
         lv_obj_set_style_bg_opa(last_scan_btn, LV_OPA_100, LV_PART_MAIN);
         lv_obj_set_style_border_width(last_scan_btn, sel ? 2 : 0, LV_PART_MAIN);
         lv_obj_set_style_border_color(last_scan_btn,
-                                      lv_color_make(0xFF, 0xFF, 0xFF),
+                                      lv_color_hex(TEXT_COLOR_DEFAULT),
                                       LV_PART_MAIN);
         if (sel)
             lv_obj_add_state(last_scan_btn, LV_STATE_FOCUSED);
@@ -304,8 +304,8 @@ static void apply_auto_detect_for_mode(scan_mode_t mode) {
 static void style_auto_list_row(lv_obj_t *btn, bool is_focused) {
     if (!btn) return;
     lv_obj_set_style_bg_color(btn,
-                              is_focused ? lv_color_make(0, 0xA0, 0)
-                                         : lv_color_make(0x30, 0x30, 0x30),
+                              is_focused ? lv_color_hex(UI_COLOR_FOCUS)
+                                         : lv_color_hex(UI_COLOR_IDLE_BTN),
                               LV_PART_MAIN);
     lv_obj_set_style_bg_opa(btn, LV_OPA_100, LV_PART_MAIN);
     lv_obj_set_style_border_width(btn, 0, LV_PART_MAIN);
@@ -314,7 +314,7 @@ static void style_auto_list_row(lv_obj_t *btn, bool is_focused) {
     // lv_list_add_btn wraps the label in the first child; reach in to color it.
     lv_obj_t *lbl = lv_obj_get_child(btn, 0);
     if (lbl) {
-        lv_obj_set_style_text_color(lbl, lv_color_make(0xFF, 0xFF, 0xFF), 0);
+        lv_obj_set_style_text_color(lbl, lv_color_hex(TEXT_COLOR_DEFAULT), 0);
         lv_obj_set_style_text_font(lbl, UI_SCANNOW_NOTE_FONT, 0);
     }
 }
@@ -513,7 +513,7 @@ static lv_obj_t *page_scannow_create(lv_obj_t *parent, panel_arr_t *arr) {
             lv_obj_t *lbl = lv_label_create(mode_btns[i]);
             lv_label_set_text(lbl, mode_names[i]);
             lv_obj_set_style_text_color(lbl,
-                                        lv_color_make(0xFF, 0xFF, 0xFF), 0);
+                                        lv_color_hex(TEXT_COLOR_DEFAULT), 0);
             lv_obj_set_style_text_font(lbl, UI_SCANNOW_NOTE_FONT, 0);
             lv_obj_center(lbl);
         }
@@ -547,9 +547,9 @@ static lv_obj_t *page_scannow_create(lv_obj_t *parent, panel_arr_t *arr) {
     lv_obj_set_style_bg_color(progressbar, lv_color_make(0xff, 0xff, 0xff), LV_PART_MAIN);
     lv_obj_set_style_radius(progressbar, 0, LV_PART_MAIN);
 #if defined(HDZBOXPRO)
-    lv_obj_set_style_bg_color(progressbar, lv_color_make(0, 0x80, 0), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(progressbar, lv_color_hex(UI_COLOR_BAR_BG), LV_PART_INDICATOR);
 #else
-    lv_obj_set_style_bg_color(progressbar, lv_color_make(0, 0xff, 0), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(progressbar, lv_color_hex(UI_COLOR_BAR_FG), LV_PART_INDICATOR);
 #endif
     lv_obj_set_style_radius(progressbar, 0, LV_PART_INDICATOR);
 
@@ -620,7 +620,7 @@ static lv_obj_t *page_scannow_create(lv_obj_t *parent, panel_arr_t *arr) {
     {
         lv_obj_t *rs_lbl = lv_label_create(mode_btns[0]);
         lv_label_set_text(rs_lbl, _lang("Rescan"));
-        lv_obj_set_style_text_color(rs_lbl, lv_color_make(0xFF, 0xFF, 0xFF), 0);
+        lv_obj_set_style_text_color(rs_lbl, lv_color_hex(TEXT_COLOR_DEFAULT), 0);
         lv_obj_set_style_text_font(rs_lbl, UI_SCANNOW_NOTE_FONT, 0);
         lv_obj_center(rs_lbl);
     }
@@ -634,7 +634,7 @@ static lv_obj_t *page_scannow_create(lv_obj_t *parent, panel_arr_t *arr) {
     {
         lv_obj_t *ls_lbl = lv_label_create(last_scan_btn);
         lv_label_set_text(ls_lbl, _lang("Choose from Last Scan"));
-        lv_obj_set_style_text_color(ls_lbl, lv_color_make(0xFF, 0xFF, 0xFF), 0);
+        lv_obj_set_style_text_color(ls_lbl, lv_color_hex(TEXT_COLOR_DEFAULT), 0);
         lv_obj_set_style_text_font(ls_lbl, UI_SCANNOW_NOTE_FONT, 0);
         lv_obj_center(ls_lbl);
     }
@@ -677,7 +677,7 @@ static lv_obj_t *page_scannow_create(lv_obj_t *parent, panel_arr_t *arr) {
     lv_obj_set_size(auto_list, lv_pct(100), lv_pct(100));
     // Theme default has near-white list bg + near-white label text, so
     // populated rows render invisibly. Force dark background.
-    lv_obj_set_style_bg_color(auto_list, lv_color_make(0x20, 0x20, 0x20),
+    lv_obj_set_style_bg_color(auto_list, lv_color_hex(UI_COLOR_BG_PANEL),
                               LV_PART_MAIN);
     lv_obj_set_style_bg_opa(auto_list, LV_OPA_100, LV_PART_MAIN);
     lv_obj_set_style_border_width(auto_list, 0, LV_PART_MAIN);

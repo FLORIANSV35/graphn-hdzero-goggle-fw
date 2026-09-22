@@ -25,7 +25,7 @@ lv_style_t style_pb, style_pb_dark;
 int style_init(void) {
     lv_style_reset(&style_rootmenu);
     lv_style_init(&style_rootmenu);
-    lv_style_set_bg_color(&style_rootmenu, lv_color_make(19, 19, 19));
+    lv_style_set_bg_color(&style_rootmenu, lv_color_hex(UI_COLOR_BG_ROOT));
     lv_style_set_text_color(&style_rootmenu, lv_color_hex(TEXT_COLOR_DEFAULT));
     lv_style_set_pad_top(&style_rootmenu, 0);
     lv_style_set_pad_bottom(&style_rootmenu, 0);
@@ -33,11 +33,11 @@ int style_init(void) {
     lv_style_set_pad_right(&style_rootmenu, 0);
     lv_style_set_radius(&style_rootmenu, 0);
     lv_style_set_border_width(&style_rootmenu, 0);
-    lv_style_set_border_color(&style_rootmenu, lv_palette_main(LV_PALETTE_RED));
+    lv_style_set_border_color(&style_rootmenu, lv_color_hex(UI_COLOR_ACCENT));
 
     lv_style_reset(&style_submenu);
     lv_style_init(&style_submenu);
-    lv_style_set_bg_color(&style_submenu, lv_color_make(32, 32, 32));
+    lv_style_set_bg_color(&style_submenu, lv_color_hex(UI_COLOR_BG_PANEL));
     lv_style_set_border_width(&style_submenu, 0);
     lv_style_set_text_color(&style_submenu, lv_color_hex(TEXT_COLOR_DEFAULT));
     lv_style_set_pad_top(&style_submenu, UI_STYLE_SUBMENU_PAD_TOP);
@@ -50,21 +50,21 @@ int style_init(void) {
     lv_style_reset(&style_pb);
     lv_style_init(&style_pb);
     lv_style_set_border_width(&style_pb, 3);
-    lv_style_set_border_color(&style_pb, lv_palette_main(LV_PALETTE_RED));
+    lv_style_set_border_color(&style_pb, lv_color_hex(UI_COLOR_ACCENT));
     lv_style_set_radius(&style_pb, 0);
 
     lv_style_reset(&style_pb_dark);
     lv_style_init(&style_pb_dark);
     lv_style_set_border_width(&style_pb_dark, 3);
-    lv_style_set_border_color(&style_pb_dark, lv_color_make(32, 32, 32));
+    lv_style_set_border_color(&style_pb_dark, lv_color_hex(UI_COLOR_BG_PANEL));
     lv_style_set_radius(&style_pb_dark, 0);
 
     lv_style_reset(&style_context);
     lv_style_init(&style_context);
     //    lv_style_set_border_color(&style_context, lv_palette_main(LV_PALETTE_GREEN));
     lv_style_set_border_width(&style_context, 0);
-    lv_style_set_bg_color(&style_context, lv_color_make(32, 32, 32));
-    lv_style_set_text_color(&style_context, lv_color_make(0xff, 0xff, 0xff));
+    lv_style_set_bg_color(&style_context, lv_color_hex(UI_COLOR_BG_PANEL));
+    lv_style_set_text_color(&style_context, lv_color_hex(TEXT_COLOR_DEFAULT));
     lv_style_set_pad_top(&style_context, 0);
     lv_style_set_pad_bottom(&style_context, 0);
     lv_style_set_pad_left(&style_context, 0);
@@ -82,9 +82,9 @@ int style_init(void) {
 
     lv_style_reset(&style_statusbar);
     lv_style_init(&style_statusbar);
-    lv_style_set_bg_color(&style_statusbar, lv_color_make(19, 19, 19));
+    lv_style_set_bg_color(&style_statusbar, lv_color_hex(UI_COLOR_BG_ROOT));
     // lv_style_set_border_width(&style_statusbar, 2);
-    // lv_style_set_border_color(&style_statusbar, lv_palette_main(LV_PALETTE_RED));
+    // lv_style_set_border_color(&style_statusbar, lv_color_hex(UI_COLOR_ACCENT));
     // lv_style_set_text_color(&style_statusbar, lv_color_hex(TEXT_COLOR_DEFAULT));
 
     lv_style_reset(&style_silder_main);
@@ -96,7 +96,7 @@ int style_init(void) {
     lv_style_reset(&style_silder_select);
     lv_style_init(&style_silder_select);
     lv_style_set_bg_opa(&style_silder_select, LV_OPA_COVER);
-    lv_style_set_bg_color(&style_silder_select, lv_color_make(0x0, 0xff, 0x0));
+    lv_style_set_bg_color(&style_silder_select, lv_color_hex(UI_COLOR_ACCENT));
     lv_style_set_radius(&style_silder_select, 0);
 
     lv_style_reset(&style_silder_indicator);
@@ -117,11 +117,11 @@ int style_init(void) {
 
     lv_style_reset(&style_silder_pressed_color);
     lv_style_init(&style_silder_pressed_color);
-    lv_style_set_bg_color(&style_silder_pressed_color, lv_palette_darken(LV_PALETTE_CYAN, 2));
+    lv_style_set_bg_color(&style_silder_pressed_color, lv_color_hex(0x0097A7));
 
     lv_style_reset(&style_scan);
     lv_style_init(&style_scan);
-    lv_style_set_bg_color(&style_scan, lv_color_make(255, 0, 0));
+    lv_style_set_bg_color(&style_scan, lv_color_hex(UI_COLOR_ACCENT));
     lv_style_set_border_width(&style_scan, 0);
 
     lv_style_reset(&style_select);
@@ -130,6 +130,14 @@ int style_init(void) {
     lv_style_set_bg_opa(&style_select, LV_OPA_COVER);
     lv_style_set_border_width(&style_select, 0);
     lv_style_set_radius(&style_select, 0);
+#if !defined(HDZBOXPRO)
+    if (ui_theme_pills()) {
+        // Focused row: rounded card with an accent outline.
+        lv_style_set_radius(&style_select, 24);
+        lv_style_set_border_width(&style_select, 2);
+        lv_style_set_border_color(&style_select, lv_color_hex(UI_COLOR_ACCENT));
+    }
+#endif
 
     lv_style_reset(&style_osd);
     lv_style_init(&style_osd);
@@ -142,29 +150,29 @@ int style_init(void) {
     lv_style_set_bg_color(&style_dropdown, lv_color_hex(UI_STYLE_DROPDOWN_BG_COLOR));
     lv_style_set_text_color(&style_dropdown, lv_color_hex(UI_STYLE_DROPDOWN_TEXT_COLOR));
     lv_style_set_border_width(&style_dropdown, 2);
-    lv_style_set_border_color(&style_dropdown, lv_palette_main(LV_PALETTE_RED));
+    lv_style_set_border_color(&style_dropdown, lv_color_hex(UI_COLOR_ACCENT));
 
     lv_style_reset(&style_keyboard[KB_STYLE_MAIN]);
     lv_style_init(&style_keyboard[KB_STYLE_MAIN]);
     lv_style_set_bg_color(&style_keyboard[KB_STYLE_MAIN], lv_color_hex(UI_STYLE_KEYBOARD_BG_COLOR));
     lv_style_set_text_color(&style_keyboard[KB_STYLE_MAIN], lv_color_hex(UI_STYLE_KEYBOARD_TEXT_COLOR));
     lv_style_set_border_width(&style_keyboard[KB_STYLE_MAIN], 0);
-    lv_style_set_border_color(&style_keyboard[KB_STYLE_MAIN], lv_palette_main(LV_PALETTE_RED));
+    lv_style_set_border_color(&style_keyboard[KB_STYLE_MAIN], lv_color_hex(UI_COLOR_ACCENT));
 
     lv_style_reset(&style_keyboard[KB_STYLE_KEY]);
     lv_style_init(&style_keyboard[KB_STYLE_KEY]);
-    lv_style_set_bg_color(&style_keyboard[KB_STYLE_KEY], lv_color_hex(0x404040));
+    lv_style_set_bg_color(&style_keyboard[KB_STYLE_KEY], lv_color_hex(UI_COLOR_WIDGET_BG));
     lv_style_set_text_color(&style_keyboard[KB_STYLE_KEY], lv_color_hex(TEXT_COLOR_DEFAULT));
     lv_style_set_border_width(&style_keyboard[KB_STYLE_KEY], 2);
-    lv_style_set_border_color(&style_keyboard[KB_STYLE_KEY], lv_palette_main(LV_PALETTE_RED));
+    lv_style_set_border_color(&style_keyboard[KB_STYLE_KEY], lv_color_hex(UI_COLOR_ACCENT));
 
     lv_style_reset(&style_keyboard[KB_STYLE_TEXT]);
     lv_style_init(&style_keyboard[KB_STYLE_TEXT]);
-    lv_style_set_bg_color(&style_keyboard[KB_STYLE_TEXT], lv_color_hex(0x404040));
+    lv_style_set_bg_color(&style_keyboard[KB_STYLE_TEXT], lv_color_hex(UI_COLOR_WIDGET_BG));
     lv_style_set_text_align(&style_keyboard[KB_STYLE_TEXT], LV_TEXT_ALIGN_CENTER);
     lv_style_set_text_color(&style_keyboard[KB_STYLE_TEXT], lv_color_hex(TEXT_COLOR_DEFAULT));
     lv_style_set_border_width(&style_keyboard[KB_STYLE_TEXT], 0);
-    lv_style_set_border_color(&style_keyboard[KB_STYLE_TEXT], lv_palette_main(LV_PALETTE_RED));
+    lv_style_set_border_color(&style_keyboard[KB_STYLE_TEXT], lv_color_hex(UI_COLOR_ACCENT));
     lv_style_set_bg_opa(&style_keyboard[KB_STYLE_TEXT], LV_OPA_COVER);
     lv_style_set_radius(&style_keyboard[KB_STYLE_TEXT], 0);
 

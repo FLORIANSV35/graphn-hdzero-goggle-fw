@@ -15,6 +15,7 @@
 #include "log/log.h"
 #include "ui/page_common.h"
 #include "ui/page_osd.h"
+#include "ui/ui_theme.h"
 #include "util/math.h"
 
 #define CANVAS_WIDTH 445
@@ -592,6 +593,24 @@ void ui_osd_element_pos_init(void) {
 
     // make the menu semi-transparent
     lv_obj_set_style_bg_opa(ui_root_container, LV_OPA_70, 0);
+
+#ifndef HDZBOXPRO
+    if (ui_theme_pills()) {
+        // Pill look: rounded overlay with an accent outline; each row card is
+        // a little shorter than its grid row so neighbouring cards stay apart.
+        lv_obj_set_height(ui_root_container, CANVAS_HEIGHT + 24);
+        lv_obj_set_style_radius(ui_root_container, 22, 0);
+        lv_obj_set_style_bg_color(ui_root_container, lv_color_hex(g_ui_theme->bg_root), 0);
+        lv_obj_set_style_bg_opa(ui_root_container, LV_OPA_80, 0);
+        lv_obj_set_style_border_width(ui_root_container, 2, 0);
+        lv_obj_set_style_border_color(ui_root_container, lv_color_hex(UI_COLOR_ACCENT), 0);
+        for (int i = 0; i < ROW_COUNT; ++i) {
+            lv_obj_set_size(ui_selection_panel.panel[i], lv_pct(94), row_dsc[i] - 6);
+            lv_obj_set_grid_cell(ui_selection_panel.panel[i], LV_GRID_ALIGN_START, 0, 6,
+                                 LV_GRID_ALIGN_CENTER, i, 1);
+        }
+    }
+#endif
 
     // set menu selections
     update_ui();

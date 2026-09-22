@@ -20,6 +20,7 @@ SDL_mutex *global_sdl_mutex;
 #endif
 
 #include "bmi270/accel_gyro.h"
+#include "../conf/ui.h"
 #include "core/app_state.h"
 #include "core/common.hh"
 #include "core/elrs.h"
@@ -224,15 +225,40 @@ static void device_init(void) {
     fans_top_setspeed(g_setting.fans.top_speed);
 }
 
+#if !defined(HDZBOXPRO)
+static lv_style_t style_flat;
+static void (*theme_apply_parent)(lv_theme_t *, lv_obj_t *);
+
+// Modern flat look: square corners, no drop shadow on buttons/dropdowns.
+static void theme_apply_flat(lv_theme_t *th, lv_obj_t *obj) {
+    if (theme_apply_parent)
+        theme_apply_parent(th, obj);
+    if (lv_obj_check_type(obj, &lv_btn_class) || lv_obj_check_type(obj, &lv_dropdown_class))
+        lv_obj_add_style(obj, &style_flat, 0);
+}
+#endif
+
 void lvgl_init() {
     lv_init();
+    ui_theme_apply(g_setting.ui_theme);
     style_init();
     lvgl_init_porting();
     lv_disp_t *dispp = lv_disp_get_default();
-    lv_theme_t *theme = lv_theme_default_init(dispp, lv_color_make(0xff, 0xff, 0xff), lv_palette_main(LV_PALETTE_RED),
+    lv_theme_t *theme = lv_theme_default_init(dispp, lv_color_make(0xff, 0xff, 0xff), lv_color_hex(UI_COLOR_ACCENT),
                                               false, LV_FONT_DEFAULT);
+#if !defined(HDZBOXPRO)
+    lv_style_init(&style_flat);
+    lv_style_set_radius(&style_flat, 0);
+    lv_style_set_shadow_width(&style_flat, 0);
+    theme_apply_parent = theme->apply_cb;
+    theme->apply_cb = theme_apply_flat;
+#endif
     lv_disp_set_theme(dispp, theme);
+#if defined(HDZBOXPRO)
     lv_obj_set_style_bg_color(lv_scr_act(), lv_color_make(64, 64, 64), 0);
+#else
+    lv_obj_set_style_bg_color(lv_scr_act(), lv_color_hex(UI_COLOR_BG_ROOT), 0);
+#endif
 }
 
 int main(int argc, char *argv[]) {

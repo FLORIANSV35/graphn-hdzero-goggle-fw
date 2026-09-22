@@ -121,7 +121,7 @@ int statusbar_init(void) {
     lv_obj_set_layout(cont, LV_LAYOUT_GRID);
     lv_obj_clear_flag(cont, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_set_style_bg_color(cont, lv_color_make(19, 19, 19), 0);
+    lv_obj_set_style_bg_color(cont, lv_color_hex(UI_COLOR_BG_STATUSBAR), 0);
     lv_obj_set_style_border_width(cont, 0, 0);
     lv_obj_set_style_radius(cont, 0, 0);
     lv_obj_set_style_pad_row(cont, 0, 0);

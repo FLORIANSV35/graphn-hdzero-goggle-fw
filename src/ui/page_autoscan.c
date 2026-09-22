@@ -43,6 +43,7 @@ static lv_obj_t *page_autoscan_create(lv_obj_t *parent, panel_arr_t *arr) {
     lv_obj_set_grid_cell(pp_autoscan.p_arr.panel[1], LV_GRID_ALIGN_STRETCH, 0, 6,
                          LV_GRID_ALIGN_STRETCH, 1, 2);
     lv_obj_clear_flag(pp_autoscan.p_arr.panel[2], FLAG_SELECTABLE);
+    pp_autoscan.p_arr.no_card |= 1u << 2; // second row of the merged Source picker
 
     btn_group_t btn_group;
     create_btn_group_item(&btn_group0, cont, 3, _lang("Startup Scan"), _lang("On"), _lang("Last"), _lang("Off"), "", 0);

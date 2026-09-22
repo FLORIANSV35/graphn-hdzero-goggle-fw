@@ -3,6 +3,7 @@
 #include <lvgl/lvgl.h>
 
 #include "core/settings.h"
+#include "ui/ui_theme.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -135,8 +136,8 @@ extern "C" {
 #define UI_AUDIO_TEST_BUTTON_HEIGHT       40
 #define UI_AUDIO_TEST_BUTTON_GAP          12
 // Idle test-button grey. Kept distinct from UI_STYLE_SELECT_BG_COLOR
-// (0x646464 here) so the boxes stay visible when the Run Test row is selected.
-#define UI_AUDIO_TEST_BTN_BG              0x404040
+// (0x3A0C0C here) so the boxes stay visible when the Run Test row is selected.
+#define UI_AUDIO_TEST_BTN_BG              (g_ui_theme->idle_btn)
 #define UI_SOURCE_COLS                    160, 160, 160, 160, 160, 160, LV_GRID_TEMPLATE_LAST
 #define UI_SOURCE_ROWS                    60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, LV_GRID_TEMPLATE_LAST
 #define UI_STORAGE_COLS                   160, 160, 160, 160, 160, 160, LV_GRID_TEMPLATE_LAST
@@ -172,15 +173,29 @@ extern "C" {
 #define UI_KEYBOARD_DIAL_RIGHT_BUTTON_IMG_POS  1270, 100
 #define UI_KEYBOARD_DIAL_RIGHT_BUTTON_IMG_TEXT 1360, 116
 
-#define UI_STYLE_SELECT_BG_COLOR     0x646464
-#define UI_STYLE_DROPDOWN_BG_COLOR   0x646464
-#define UI_STYLE_DROPDOWN_TEXT_COLOR 0xFFFFFF
-#define UI_STYLE_KEYBOARD_BG_COLOR   0x646464
-#define UI_STYLE_KEYBOARD_TEXT_COLOR 0x000000
+// Menu palette: read from the active runtime theme (see ui/ui_theme.c).
+// Menus only -- the video OSD keeps its own colors.
+#define UI_COLOR_BG_ROOT             (g_ui_theme->bg_root)
+#define UI_COLOR_BG_PANEL            (g_ui_theme->bg_panel)
+#define UI_COLOR_BG_STATUSBAR        (g_ui_theme->bg_root) // status bar icons use a chroma-keyed background
+#define UI_COLOR_ACCENT              (g_ui_theme->accent)
+#define UI_COLOR_TAB                 (g_ui_theme->tab)
+#define UI_COLOR_BORDER_IDLE         (g_ui_theme->border_idle)
+#define UI_COLOR_WIDGET_BG           (g_ui_theme->widget_bg)
+#define UI_COLOR_FOCUS               (g_ui_theme->focus)
+#define UI_COLOR_IDLE_BTN            (g_ui_theme->idle_btn)
+#define UI_COLOR_BAR_BG              (g_ui_theme->bar_bg)
+#define UI_COLOR_BAR_FG              (g_ui_theme->bar_fg)
+
+#define UI_STYLE_SELECT_BG_COLOR     (g_ui_theme->select_bg)
+#define UI_STYLE_DROPDOWN_BG_COLOR   (g_ui_theme->dd_bg)
+#define UI_STYLE_DROPDOWN_TEXT_COLOR (g_ui_theme->dd_text)
+#define UI_STYLE_KEYBOARD_BG_COLOR   (g_ui_theme->kb_bg)
+#define UI_STYLE_KEYBOARD_TEXT_COLOR (g_ui_theme->kb_text)
 
 // text color
-#define TEXT_COLOR_DEFAULT 0xffffff
-#define TEXT_COLOR_DISABLE 0x808080
+#define TEXT_COLOR_DEFAULT (g_ui_theme->text)
+#define TEXT_COLOR_DISABLE (g_ui_theme->text_disable)
 
 static inline lv_coord_t *UI_STATUS_BAR_COLS() {
     static lv_coord_t c[] = {264, 64, 267, 64, 267, 64, 267, 64, 267, 64, 267, LV_GRID_TEMPLATE_LAST};
@@ -333,6 +348,18 @@ static inline int UI_STATUS_BAR_LABEL_WIDTH() {
 #define UI_KEYBOARD_DIAL_CLICK_TEXT_POS        710, 96
 #define UI_KEYBOARD_DIAL_RIGHT_BUTTON_IMG_POS  822, 64
 #define UI_KEYBOARD_DIAL_RIGHT_BUTTON_IMG_TEXT 905, 85
+
+#define UI_COLOR_BG_ROOT             0x131313
+#define UI_COLOR_BG_PANEL            0x202020
+#define UI_COLOR_BG_STATUSBAR        0x131313
+#define UI_COLOR_ACCENT              0xF44336 // LV_PALETTE_RED main
+#define UI_COLOR_TAB                 0xFFFFFF
+#define UI_COLOR_BORDER_IDLE         0x606060
+#define UI_COLOR_WIDGET_BG           0x606060
+#define UI_COLOR_FOCUS               0x00A000
+#define UI_COLOR_IDLE_BTN            0x404040
+#define UI_COLOR_BAR_BG              0x008000
+#define UI_COLOR_BAR_FG              0x00FF00
 
 #define UI_STYLE_SELECT_BG_COLOR     0x404040
 #define UI_STYLE_DROPDOWN_BG_COLOR   0x606060

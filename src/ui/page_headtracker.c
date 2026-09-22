@@ -117,6 +117,18 @@ static void update_visibility(uint8_t page) {
 
         break;
     }
+
+    // Pill look: rows 3 and 4 hold nothing on the alarm page, so they get no card.
+    if (ui_theme_pills()) {
+        const uint32_t empty_rows = (1u << 3) | (1u << 4);
+        pp_headtracker.p_arr.no_card = (page == PAGE2) ? empty_rows : 0;
+        for (int r = 3; r <= 4; ++r) {
+            if (page == PAGE2)
+                lv_obj_add_flag(pp_headtracker.p_arr.panel[r], LV_OBJ_FLAG_HIDDEN);
+            else
+                lv_obj_clear_flag(pp_headtracker.p_arr.panel[r], LV_OBJ_FLAG_HIDDEN);
+        }
+    }
 }
 
 static void page_headtracker_set_alarm_reset() {
@@ -196,9 +208,9 @@ static lv_obj_t *page_headtracker_create(lv_obj_t *parent, panel_arr_t *arr) {
     lv_obj_set_style_bg_color(pan, lv_color_make(0xff, 0xff, 0xff), LV_PART_MAIN);
     lv_obj_set_style_radius(pan, 0, LV_PART_MAIN);
 #ifdef HDZBOXPRO
-    lv_obj_set_style_bg_color(pan, lv_color_make(0, 0x80, 0), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(pan, lv_color_hex(UI_COLOR_BAR_BG), LV_PART_INDICATOR);
 #else
-    lv_obj_set_style_bg_color(pan, lv_color_make(0, 0xff, 0), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(pan, lv_color_hex(UI_COLOR_BAR_FG), LV_PART_INDICATOR);
 #endif
     lv_obj_set_style_radius(pan, 0, LV_PART_INDICATOR);
     lv_obj_set_grid_cell(pan, LV_GRID_ALIGN_START, 2, 1,
@@ -213,9 +225,9 @@ static lv_obj_t *page_headtracker_create(lv_obj_t *parent, panel_arr_t *arr) {
     lv_obj_set_style_bg_color(tilt, lv_color_make(0xff, 0xff, 0xff), LV_PART_MAIN);
     lv_obj_set_style_radius(tilt, 0, LV_PART_MAIN);
 #ifdef HDZBOXPRO
-    lv_obj_set_style_bg_color(tilt, lv_color_make(0, 0x80, 0), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(tilt, lv_color_hex(UI_COLOR_BAR_BG), LV_PART_INDICATOR);
 #else
-    lv_obj_set_style_bg_color(tilt, lv_color_make(0, 0xff, 0), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(tilt, lv_color_hex(UI_COLOR_BAR_FG), LV_PART_INDICATOR);
 #endif
     lv_obj_set_style_radius(tilt, 0, LV_PART_INDICATOR);
     lv_obj_set_grid_cell(tilt, LV_GRID_ALIGN_START, 2, 1,
@@ -230,7 +242,7 @@ static lv_obj_t *page_headtracker_create(lv_obj_t *parent, panel_arr_t *arr) {
     lv_obj_set_style_bg_color(roll, lv_color_make(0xff, 0xff, 0xff), LV_PART_MAIN);
     lv_obj_set_style_radius(roll, 0, LV_PART_MAIN);
 #ifdef HDZBOXPRO
-    lv_obj_set_style_bg_color(roll, lv_color_make(0, 0x80, 0), LV_PART_INDICATOR);
+    lv_obj_set_style_bg_color(roll, lv_color_hex(UI_COLOR_BAR_BG), LV_PART_INDICATOR);
 #else
     lv_obj_set_style_bg_color(roll, lv_color_make(0x00, 0xff, 0x00), LV_PART_INDICATOR);
 #endif

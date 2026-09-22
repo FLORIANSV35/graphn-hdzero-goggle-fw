@@ -262,7 +262,7 @@ static lv_obj_t *page_input_create(lv_obj_t *parent, panel_arr_t *arr) {
     lv_dropdown_set_selected(pageItems[RIGHT_DOUBLE], btnIndexFromId(g_setting.inputs.right_double_click));
 #ifdef HDZBOXPRO
     for (int i = 0; i < BACK_BTN; i++) {
-        lv_obj_set_style_border_color(pageItems[i], lv_color_hex(0x606060), 0);
+        lv_obj_set_style_border_color(pageItems[i], lv_color_hex(UI_COLOR_BORDER_IDLE), 0);
     }
 #endif
     snprintf(buf, sizeof(buf), "< %s", _lang("Back"));
@@ -292,7 +292,7 @@ static void page_input_enter() {
     reset_dropdown_styles();
     lv_obj_add_style(pageItems[currentHighlight], &style_dropdown, LV_PART_MAIN);
 #ifdef HDZBOXPRO
-    lv_obj_set_style_border_color(pageItems[0], lv_palette_main(LV_PALETTE_RED), 0);
+    lv_obj_set_style_border_color(pageItems[0], lv_color_hex(UI_COLOR_ACCENT), 0);
 #endif
 }
 
@@ -308,7 +308,7 @@ static void page_input_exit() {
 
 #ifdef HDZBOXPRO
     for (int i = 0; i < ROW_COUNT; i++) {
-        lv_obj_set_style_border_color(pageItems[i], lv_color_hex(0x606060), 0);
+        lv_obj_set_style_border_color(pageItems[i], lv_color_hex(UI_COLOR_BORDER_IDLE), 0);
     }
 #endif
 }
@@ -342,9 +342,9 @@ static void page_input_on_roller(uint8_t key) {
 #ifdef HDZBOXPRO
     for (int i = 0; i < ROW_COUNT; i++) {
         if (i == currentHighlight) {
-            lv_obj_set_style_border_color(pageItems[i], lv_palette_main(LV_PALETTE_RED), 0);
+            lv_obj_set_style_border_color(pageItems[i], lv_color_hex(UI_COLOR_ACCENT), 0);
         } else {
-            lv_obj_set_style_border_color(pageItems[i], lv_color_hex(0x606060), 0);
+            lv_obj_set_style_border_color(pageItems[i], lv_color_hex(UI_COLOR_BORDER_IDLE), 0);
         }
     }
 #endif

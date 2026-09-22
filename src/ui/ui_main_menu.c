@@ -20,6 +20,7 @@
 #include "ui/page_common.h"
 #include "ui/page_elrs.h"
 #include "ui/page_fans.h"
+#include "ui/page_theme.h"
 #include "ui/page_focus_chart.h"
 #include "ui/page_headtracker.h"
 #include "ui/page_imagesettings.h"
@@ -50,7 +51,7 @@ static lv_obj_t *root_page;
  * To contain all menu pages.
  */
 
-#define PAGE_PACK_MAX_NUM 20
+#define PAGE_PACK_MAX_NUM 24
 
 static page_pack_t *page_packs[PAGE_PACK_MAX_NUM];
 static size_t page_packs_count = 0;
@@ -67,19 +68,50 @@ static page_pack_t *find_pp(lv_obj_t *page) {
     return NULL;
 }
 
+#ifndef HDZBOXPRO
+// Pill look: the active entry is a solid accent pill with dark text; every
+// other entry goes back to the normal text colour.
+static void pill_refresh_labels(void) {
+    page_pack_t *cur = find_pp(lv_menu_get_cur_main_page(menu));
+    for (uint32_t i = 0; i < page_packs_count; i++) {
+        page_pack_t *pp = page_packs[i];
+        lv_obj_set_style_text_color(pp->label,
+                                    lv_color_hex(pp == cur ? ui_theme_ink(g_ui_theme->tab) : g_ui_theme->text), 0);
+    }
+}
+#endif
+
 static void select_menu_tab(page_pack_t *pp) {
     lv_obj_clear_flag(pp->icon, LV_OBJ_FLAG_HIDDEN);
+#ifndef HDZBOXPRO
+    lv_obj_set_style_bg_color(((lv_menu_t *)menu)->selected_tab, lv_color_hex(UI_COLOR_TAB), LV_STATE_CHECKED);
+#endif
 #ifdef HDZBOXPRO
     lv_obj_set_style_bg_opa(((lv_menu_t *)menu)->selected_tab, LV_OPA_20, LV_STATE_CHECKED);
 #else
     lv_obj_set_style_bg_opa(((lv_menu_t *)menu)->selected_tab, LV_OPA_50, LV_STATE_CHECKED);
+#endif
+#ifndef HDZBOXPRO
+    if (ui_theme_pills()) {
+        lv_obj_set_style_bg_opa(((lv_menu_t *)menu)->selected_tab, LV_OPA_COVER, LV_STATE_CHECKED);
+        pill_refresh_labels();
+    }
 #endif
 }
 
 static void deselect_menu_tab(page_pack_t *pp) {
     // LV_OPA_20 is the default for pressed menu
     // see lv_theme_default.c styles->menu_pressed
+#ifndef HDZBOXPRO
+    lv_obj_set_style_bg_color(((lv_menu_t *)menu)->selected_tab, lv_color_hex(UI_COLOR_TAB), LV_STATE_CHECKED);
+#endif
     lv_obj_set_style_bg_opa(((lv_menu_t *)menu)->selected_tab, LV_OPA_20, LV_STATE_CHECKED);
+#ifndef HDZBOXPRO
+    if (ui_theme_pills()) {
+        lv_obj_set_style_bg_opa(((lv_menu_t *)menu)->selected_tab, LV_OPA_COVER, LV_STATE_CHECKED);
+        pill_refresh_labels();
+    }
+#endif
     lv_obj_add_flag(pp->icon, LV_OBJ_FLAG_HIDDEN);
 }
 
@@ -232,6 +264,10 @@ void menu_nav(uint8_t key) {
     }
     lv_obj_t *entry = lv_obj_get_child(lv_obj_get_child(lv_menu_get_cur_sidebar_page(menu), 0), selected);
     lv_event_send(entry, LV_EVENT_CLICKED, NULL);
+#ifndef HDZBOXPRO
+    if (ui_theme_pills())
+        pill_refresh_labels();
+#endif
     // The sidebar holds more entries than fit the BoxPro screen; keep the
     // selected entry visible (the sidebar is scrollable but nothing else
     // scrolls it).
@@ -276,8 +312,27 @@ static void main_menu_create_entry(lv_obj_t *menu, lv_obj_t *section, page_pack_
     LOGD("creating main menu entry %s", pp->name);
 
     pp->page = pp->create(menu, &pp->p_arr);
+#ifndef HDZBOXPRO
+    // Draw the row cards right away (no focused row yet).
+    if (pp->p_arr.max && pp->p_arr.panel[0])
+        set_select_item(&pp->p_arr, -1);
+#endif
 
     lv_obj_t *cont = lv_menu_cont_create(section);
+#ifndef HDZBOXPRO
+    lv_obj_set_style_bg_color(cont, lv_color_hex(UI_COLOR_TAB), LV_STATE_CHECKED);
+    lv_obj_set_style_bg_color(cont, lv_color_hex(UI_COLOR_TAB), LV_STATE_CHECKED | LV_STATE_PRESSED);
+    lv_obj_set_style_bg_color(cont, lv_color_hex(UI_COLOR_TAB), LV_STATE_CHECKED | LV_STATE_FOCUSED);
+    if (ui_theme_pills()) {
+        // Pill entry: a border the colour of the sidebar insets the fill.
+        lv_obj_set_style_bg_opa(cont, LV_OPA_COVER, LV_STATE_CHECKED);
+        lv_obj_set_style_bg_opa(cont, LV_OPA_COVER, LV_STATE_CHECKED | LV_STATE_PRESSED);
+        lv_obj_set_style_bg_opa(cont, LV_OPA_COVER, LV_STATE_CHECKED | LV_STATE_FOCUSED);
+        lv_obj_set_style_radius(cont, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_border_width(cont, 4, 0);
+        lv_obj_set_style_border_color(cont, lv_color_hex(UI_COLOR_BG_ROOT), 0);
+    }
+#endif
 
     pp->label = lv_label_create(cont);
     lv_label_set_text(pp->label, _lang(pp->name));
@@ -288,6 +343,11 @@ static void main_menu_create_entry(lv_obj_t *menu, lv_obj_t *section, page_pack_
     pp->icon = lv_img_create(cont);
     lv_img_set_src(pp->icon, &img_arrow);
     lv_obj_add_flag(pp->icon, LV_OBJ_FLAG_HIDDEN);
+#ifndef HDZBOXPRO
+    // The filled pill already marks the active entry; no red arrow.
+    if (ui_theme_pills())
+        lv_obj_set_style_img_opa(pp->icon, LV_OPA_TRANSP, 0);
+#endif
 
     lv_obj_set_style_text_font(cont, UI_MENU_ENTRY_FONT, 0);
     lv_menu_set_load_page_event(menu, cont, pp->page);
@@ -335,6 +395,9 @@ void main_menu_init(void) {
     page_packs[page_packs_count++] = &pp_focus_chart;
     page_packs[page_packs_count++] = &pp_clock;
     page_packs[page_packs_count++] = &pp_input;
+#if !defined(HDZBOXPRO)
+    page_packs[page_packs_count++] = &pp_theme;
+#endif
 #if defined(HDZBOXPRO) || defined(HDZGOGGLE2)
     page_packs[page_packs_count++] = &pp_analog_rssi;
 #endif
@@ -343,9 +406,14 @@ void main_menu_init(void) {
     menu = lv_menu_create(lv_scr_act());
     lv_obj_clear_flag(menu, LV_OBJ_FLAG_SCROLLABLE);
 
-    lv_obj_set_style_bg_color(menu, lv_color_make(32, 32, 32), 0);
+    lv_obj_set_style_bg_color(menu, lv_color_hex(UI_COLOR_BG_PANEL), 0);
+#ifndef HDZBOXPRO
+    // Pill look has no vertical frame lines.
+    lv_obj_set_style_border_width(menu, ui_theme_pills() ? 0 : 2, 0);
+#else
     lv_obj_set_style_border_width(menu, 2, 0);
-    lv_obj_set_style_border_color(menu, lv_color_make(255, 0, 0), 0);
+#endif
+    lv_obj_set_style_border_color(menu, lv_color_hex(UI_COLOR_ACCENT), 0);
     lv_obj_set_style_border_side(menu, LV_BORDER_SIDE_LEFT | LV_BORDER_SIDE_RIGHT, 0);
     lv_obj_set_size(menu, UI_MENU_SIZE);
     lv_obj_set_pos(menu, UI_MENU_POSITION);

@@ -64,10 +64,43 @@ void create_select_item(panel_arr_t *arr, lv_obj_t *parent) {
         lv_obj_add_style(arr->panel[i], &style_select, LV_PART_MAIN);
         lv_obj_set_grid_cell(arr->panel[i], LV_GRID_ALIGN_STRETCH, 0, 6,
                              LV_GRID_ALIGN_STRETCH, i, 1);
+#ifndef HDZBOXPRO
+        // Rounded focus cards must end inside the page, not be cut by its edge.
+        if (ui_theme_pills()) {
+            lv_obj_set_size(arr->panel[i], lv_pct(95), LV_SIZE_CONTENT);
+            lv_obj_set_grid_cell(arr->panel[i], LV_GRID_ALIGN_START, 0, 6,
+                                 LV_GRID_ALIGN_STRETCH, i, 1);
+        }
+#endif
     }
 }
 void set_select_item(const panel_arr_t *arr, int row) {
     int i;
+#ifndef HDZBOXPRO
+    if (ui_theme_pills()) {
+        // Every selectable row is a dark rounded card.
+        for (i = 0; i < MAX_PANELS; ++i) {
+            lv_obj_t *p = arr->panel[i];
+            if (i >= arr->max || (arr->no_card & (1u << i))) {
+                lv_obj_add_flag(p, LV_OBJ_FLAG_HIDDEN);
+                continue;
+            }
+            // Same card for every row, selectable or not; the focused one
+            // only gains an accent outline.
+            lv_obj_clear_flag(p, LV_OBJ_FLAG_HIDDEN);
+            // Pages may re-place a card over two rows with a stretched cell,
+            // which runs past the page edge: keep every card the same width.
+            lv_obj_set_style_grid_cell_x_align(p, LV_GRID_ALIGN_START, 0);
+            lv_obj_set_width(p, lv_pct(95));
+            lv_obj_set_style_bg_color(p, lv_color_hex(UI_COLOR_WIDGET_BG), 0);
+            lv_obj_set_style_border_width(p, i == row ? 2 : 0, 0);
+            lv_obj_set_style_border_color(p, lv_color_hex(UI_COLOR_ACCENT), 0);
+        }
+        if (row >= 0 && row < MAX_PANELS)
+            lv_obj_scroll_to_view_recursive(arr->panel[row], LV_ANIM_OFF);
+        return;
+    }
+#endif
     for (i = 0; i < MAX_PANELS; ++i) {
         lv_obj_add_flag(arr->panel[i], LV_OBJ_FLAG_HIDDEN);
     }
@@ -85,13 +118,13 @@ lv_obj_t *create_msgbox_item(const char *title, const char *message) {
     lv_obj_set_width(msgbox, UI_PAGE_MSG_BOX_SIZE);
     lv_obj_center(msgbox);
 
-    lv_obj_set_style_bg_color(msgbox, lv_color_make(19, 19, 19), 0);
+    lv_obj_set_style_bg_color(msgbox, lv_color_hex(UI_COLOR_BG_ROOT), 0);
 
-    lv_obj_set_style_text_color(lv_msgbox_get_title(msgbox), lv_color_make(0, 255, 0), 0);
+    lv_obj_set_style_text_color(lv_msgbox_get_title(msgbox), lv_color_hex(UI_COLOR_ACCENT), 0);
     lv_obj_set_style_text_color(lv_msgbox_get_text(msgbox), lv_color_hex(TEXT_COLOR_DEFAULT), 0);
 
     lv_obj_set_style_border_width(msgbox, 3, 0);
-    lv_obj_set_style_border_color(msgbox, lv_palette_main(LV_PALETTE_RED), 0);
+    lv_obj_set_style_border_color(msgbox, lv_color_hex(UI_COLOR_ACCENT), 0);
 
     return msgbox;
 }
@@ -262,7 +295,7 @@ void create_btn_item(lv_obj_t *parent, const char *name, int col, int row) {
 
     lv_obj_set_style_text_font(btn, UI_PAGE_TEXT_FONT, 0);
     lv_obj_set_style_text_align(btn, LV_TEXT_ALIGN_LEFT, 0);
-    lv_obj_set_style_bg_color(btn, lv_color_make(19, 19, 19), 0);
+    lv_obj_set_style_bg_color(btn, lv_color_hex(UI_COLOR_BG_ROOT), 0);
     lv_obj_set_style_bg_color(btn, lv_color_hex(TEXT_COLOR_DISABLE), STATE_DISABLED);
     lv_obj_set_style_bg_opa(btn, 0x0, 0);
     lv_obj_set_style_shadow_width(btn, 0, 0);
@@ -281,10 +314,17 @@ lv_obj_t *create_dropdown_item(lv_obj_t *parent, const char *options, int col, i
     lv_obj_set_style_pad_top(obj, pad_top, 0);
     lv_obj_set_size(obj, width, height);
     lv_obj_set_style_text_color(obj, lv_color_hex(TEXT_COLOR_DISABLE), STATE_DISABLED);
+#ifndef HDZBOXPRO
+    if (g_ui_theme->field_bg) {
+        lv_obj_set_style_bg_color(obj, lv_color_hex(g_ui_theme->field_bg), 0);
+        lv_obj_set_style_text_color(obj, lv_color_hex(g_ui_theme->field_text), 0);
+        lv_obj_set_style_border_color(obj, lv_color_hex(UI_COLOR_BORDER_IDLE), 0);
+    }
+#endif
 #ifdef HDZBOXPRO
-    lv_obj_set_style_bg_color(obj, lv_color_hex(0x606060), 0); // bg color
+    lv_obj_set_style_bg_color(obj, lv_color_hex(UI_COLOR_BORDER_IDLE), 0); // bg color
     // lv_obj_set_style_border_width(obj, 2, 0);
-    lv_obj_set_style_border_color(obj, lv_color_hex(0x606060), 0);
+    lv_obj_set_style_border_color(obj, lv_color_hex(UI_COLOR_BORDER_IDLE), 0);
 #endif
     lv_obj_set_grid_cell(obj, column_align, col, col_span, LV_GRID_ALIGN_CENTER, row, 1);
 
@@ -293,6 +333,62 @@ lv_obj_t *create_dropdown_item(lv_obj_t *parent, const char *options, int col, i
 
 static lv_coord_t col_dsc[] = {40, 150, LV_GRID_TEMPLATE_LAST};
 static lv_coord_t row_dsc[] = {60, LV_GRID_TEMPLATE_LAST};
+
+
+#ifndef HDZBOXPRO
+// Pill look: options of a button group are flat text; the chosen one is a
+// filled pill. Off for the "Original" theme, which keeps the arrow markers.
+static void pill_init(btn_with_arr_t *b, int height, int width) {
+    if (!ui_theme_pills())
+        return;
+    // Unused option slot (empty label): no empty pill.
+    if (lv_label_get_text(b->label)[0] == '\0')
+        lv_obj_add_flag(b->btn, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_set_style_radius(b->btn, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_pad_top(b->btn, 0, 0);
+    lv_obj_set_style_pad_bottom(b->btn, 0, 0);
+    lv_obj_set_height(b->btn, height);
+    if (width > 0) {
+        // Compact group: the button cell is taller than its container, so
+        // anchor to the top instead of centring (which clipped the pill).
+        lv_obj_set_width(b->btn, width);
+        lv_obj_set_grid_cell(b->btn, LV_GRID_ALIGN_START, 1, 1, LV_GRID_ALIGN_START, 0, 1);
+        lv_obj_set_style_translate_y(b->btn, 4, 0);
+    }
+    lv_obj_align(b->label, LV_ALIGN_CENTER, 0, 0);
+}
+
+static void pill_set_state(btn_with_arr_t *b, bool selected) {
+    if (!ui_theme_pills())
+        return;
+    const bool enabled = !lv_obj_has_state(b->label, STATE_DISABLED);
+    lv_color_t text = lv_color_hex(g_ui_theme->text);
+    lv_color_t root = lv_color_hex(g_ui_theme->bg_root);
+    lv_color_t sel = lv_color_hex(g_ui_theme->sel);
+    lv_color_t fill, ink;
+
+    lv_obj_add_flag(b->arrow, LV_OBJ_FLAG_HIDDEN);
+    if (selected && enabled) {
+        fill = sel;
+        ink = lv_color_hex(ui_theme_ink(g_ui_theme->sel));
+    } else if (selected) {
+        // disabled row: dimmed fill, light text so the label stays readable
+        fill = lv_color_mix(sel, root, 90);
+        ink = lv_color_mix(text, root, 200);
+    } else {
+        fill = root;
+        ink = lv_color_mix(text, lv_color_hex(g_ui_theme->bg_panel), enabled ? 170 : 110);
+    }
+    lv_obj_set_style_bg_color(b->btn, fill, 0);
+    lv_obj_set_style_bg_opa(b->btn, LV_OPA_COVER, 0);
+    // the stock DISABLED text colour would override ours (and can match the fill)
+    lv_obj_set_style_text_color(b->label, ink, 0);
+    lv_obj_set_style_text_color(b->label, ink, STATE_DISABLED);
+}
+#else
+static void pill_init(btn_with_arr_t *b, int height, int width) {}
+static void pill_set_state(btn_with_arr_t *b, bool selected) {}
+#endif
 
 static void create_btn_with_arrow(lv_obj_t *parent, btn_with_arr_t *btn_a, const char *name, int row, int col) {
     btn_a->container = lv_obj_create(parent);
@@ -319,7 +415,7 @@ static void create_btn_with_arrow(lv_obj_t *parent, btn_with_arr_t *btn_a, const
     lv_obj_set_style_text_align(btn_a->label, LV_TEXT_ALIGN_LEFT, 0);
     lv_obj_set_style_text_font(btn_a->btn, UI_PAGE_TEXT_FONT, 0);
     lv_obj_set_style_text_align(btn_a->btn, LV_TEXT_ALIGN_LEFT, 0);
-    lv_obj_set_style_bg_color(btn_a->btn, lv_color_make(19, 19, 19), 0);
+    lv_obj_set_style_bg_color(btn_a->btn, lv_color_hex(UI_COLOR_BG_ROOT), 0);
     lv_obj_set_style_bg_opa(btn_a->btn, 0x0, 0);
     lv_obj_set_style_shadow_width(btn_a->btn, 0, 0);
     lv_obj_set_style_pad_top(btn_a->btn, UI_PAGE_TEXT_PAD, 0);
@@ -334,6 +430,7 @@ static void create_btn_with_arrow(lv_obj_t *parent, btn_with_arr_t *btn_a, const
     lv_obj_set_style_translate_y(btn_a->arrow, -10, LV_PART_MAIN);
     lv_obj_set_style_translate_y(btn_a->btn, -10, LV_PART_MAIN);
 #endif
+    pill_init(btn_a, 44, 0);
 }
 
 void btn_group_set_sel(btn_group_t *btn_group, int sel) {
@@ -345,6 +442,7 @@ void btn_group_set_sel(btn_group_t *btn_group, int sel) {
         } else {
             lv_obj_add_flag(btn_group->btn_a[i].arrow, LV_OBJ_FLAG_HIDDEN);
         }
+        pill_set_state(&btn_group->btn_a[i], i == sel);
     }
 }
 
@@ -396,7 +494,7 @@ static void create_btn_with_arrow_compact(lv_obj_t *parent, btn_with_arr_t *btn_
     lv_obj_set_style_text_align(btn_a->label, LV_TEXT_ALIGN_LEFT, 0);
     lv_obj_set_style_text_font(btn_a->btn, font, 0);
     lv_obj_set_style_text_align(btn_a->btn, LV_TEXT_ALIGN_LEFT, 0);
-    lv_obj_set_style_bg_color(btn_a->btn, lv_color_make(19, 19, 19), 0);
+    lv_obj_set_style_bg_color(btn_a->btn, lv_color_hex(UI_COLOR_BG_ROOT), 0);
     lv_obj_set_style_bg_opa(btn_a->btn, 0x0, 0);
     lv_obj_set_style_shadow_width(btn_a->btn, 0, 0);
     lv_obj_set_style_text_color(btn_a->label, lv_color_hex(TEXT_COLOR_DISABLE), STATE_DISABLED);
@@ -409,6 +507,8 @@ static void create_btn_with_arrow_compact(lv_obj_t *parent, btn_with_arr_t *btn_
                          LV_GRID_ALIGN_CENTER, 0, 1);
 
     lv_obj_set_style_pad_column(btn_a->container, 0, 0);
+    // Compact groups sit in narrow columns: a smaller pill that fits them.
+    pill_init(btn_a, height > 44 ? 36 : height - 8, 100);
 }
 
 void create_btn_group_item_compact(btn_group_t *btn_group, lv_obj_t *parent, int count, const char *name, const char *name0, const char *name1, const char *name2, const char *name3, int row, int height, int arrow_scale_percent, const lv_font_t *font) {
@@ -547,11 +647,21 @@ void btn_group_show(btn_group_t *btn_group, bool visible) {
         } else {
             lv_obj_add_flag(btn_group->btn_a[i].label, LV_OBJ_FLAG_HIDDEN);
         }
+        // Pills are drawn by the button, not the label: hide the whole pill,
+        // otherwise a hidden group leaves empty pills behind that swallow the
+        // text of the group shown at the same place (WiFi / Head Tracker pages).
+        if (ui_theme_pills()) {
+            if (visible && lv_label_get_text(btn_group->btn_a[i].label)[0] != '\0')
+                lv_obj_clear_flag(btn_group->btn_a[i].btn, LV_OBJ_FLAG_HIDDEN);
+            else
+                lv_obj_add_flag(btn_group->btn_a[i].btn, LV_OBJ_FLAG_HIDDEN);
+        }
     }
 
     int sel = btn_group_get_sel(btn_group);
     if (visible) {
-        lv_obj_clear_flag(btn_group->btn_a[sel].arrow, LV_OBJ_FLAG_HIDDEN);
+        if (!ui_theme_pills())
+            lv_obj_clear_flag(btn_group->btn_a[sel].arrow, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(btn_group->btn_a[sel].label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(btn_group->label, LV_OBJ_FLAG_HIDDEN);
     } else {
@@ -573,9 +683,12 @@ void btn_group_enable(btn_group_t *btn_group, bool enable) {
     const int sel = btn_group_get_sel(btn_group);
     if (enable) {
         lv_obj_clear_state(btn_group->label, STATE_DISABLED);
-        lv_obj_clear_flag(btn_group->btn_a[sel].arrow, LV_OBJ_FLAG_HIDDEN);
+        if (!ui_theme_pills())
+            lv_obj_clear_flag(btn_group->btn_a[sel].arrow, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_state(btn_group->label, STATE_DISABLED);
         lv_obj_add_flag(btn_group->btn_a[sel].arrow, LV_OBJ_FLAG_HIDDEN);
     }
+    for (int i = 0; i < btn_group->valid; ++i)
+        pill_set_state(&btn_group->btn_a[i], i == sel);
 }

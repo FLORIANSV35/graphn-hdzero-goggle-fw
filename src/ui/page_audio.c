@@ -98,6 +98,7 @@ static void update_visibility() {
 
     lv_obj_clear_flag(pp_audio.p_arr.panel[ROW_VOLUME_HEADER], FLAG_SELECTABLE);
     lv_obj_clear_flag(pp_audio.p_arr.panel[ROW_NOTE], FLAG_SELECTABLE);
+    pp_audio.p_arr.no_card |= (1u << ROW_VOLUME_HEADER) | (1u << ROW_NOTE); // plain text rows
 }
 
 static void create_test_button(lv_obj_t *parent, audio_test_mode_t mode, const char *name) {

@@ -154,7 +154,7 @@ static void page_clock_create_dropdown(lv_obj_t *parent,
     page_clock_items[item].type = ITEM_TYPE_OBJ;
 
 #ifdef HDZBOXPRO
-    lv_obj_set_style_border_color(page_clock_items[item].data.obj, lv_color_hex(0x606060), 0);
+    lv_obj_set_style_border_color(page_clock_items[item].data.obj, lv_color_hex(UI_COLOR_BORDER_IDLE), 0);
 #endif
     int index = page_clock_get_dropdown_index(item, text);
     if (index != -1) {
@@ -223,6 +223,43 @@ static void page_clock_refresh_datetime() {
     lv_label_set_text(page_clock_datetime.format, text);
 }
 
+#ifndef HDZBOXPRO
+#define CLOCK_ROWS 5
+static lv_obj_t *page_clock_cards[CLOCK_ROWS];
+
+// Grid row a page item lives in.
+static int page_clock_item_row(int item) {
+    switch (item) {
+    case ITEM_YEAR:
+    case ITEM_MONTH:
+    case ITEM_DAY:
+        return 0;
+    case ITEM_HOUR:
+    case ITEM_MINUTE:
+    case ITEM_SECOND:
+        return 1;
+    case ITEM_FORMAT:
+        return 2;
+    case ITEM_SET_CLOCK:
+        return 3;
+    default:
+        return 4;
+    }
+}
+
+// Pill look: one dark card per row; the selected item's row gets an accent outline.
+static void page_clock_update_cards(bool focused) {
+    if (!ui_theme_pills() || !page_clock_cards[0])
+        return;
+    int sel_row = page_clock_item_row(page_clock_item_selected);
+    for (int i = 0; i < CLOCK_ROWS; ++i) {
+        lv_obj_set_style_border_width(page_clock_cards[i], focused && i == sel_row ? 2 : 0, 0);
+    }
+}
+#else
+static void page_clock_update_cards(bool focused) {}
+#endif
+
 /**
  * Dynamically update the UI elements as the user manipulates the page.
  */
@@ -238,6 +275,7 @@ static void page_clock_refresh_styles() {
             break;
         }
     }
+    page_clock_update_cards(false);
 }
 
 /**
@@ -444,6 +482,24 @@ static lv_obj_t *page_clock_create(lv_obj_t *parent, panel_arr_t *arr) {
 
     create_select_item(arr, cont);
 
+#ifndef HDZBOXPRO
+    if (ui_theme_pills()) {
+        // The item panels stay hidden; rows are drawn as cards instead.
+        for (int i = 0; i < CLOCK_ROWS; ++i) {
+            lv_obj_t *card = lv_obj_create(cont);
+            lv_obj_clear_flag(card, LV_OBJ_FLAG_SCROLLABLE);
+            lv_obj_set_size(card, lv_pct(95), LV_SIZE_CONTENT);
+            lv_obj_set_style_radius(card, 24, 0);
+            lv_obj_set_style_bg_color(card, lv_color_hex(UI_COLOR_WIDGET_BG), 0);
+            lv_obj_set_style_bg_opa(card, LV_OPA_COVER, 0);
+            lv_obj_set_style_border_color(card, lv_color_hex(UI_COLOR_ACCENT), 0);
+            lv_obj_set_style_border_width(card, 0, 0);
+            lv_obj_set_grid_cell(card, LV_GRID_ALIGN_START, 0, 6, LV_GRID_ALIGN_STRETCH, i, 1);
+            page_clock_cards[i] = card;
+        }
+    }
+#endif
+
     // Current date/time or last saved setting.
     page_clock_create_dropdown(cont, ITEM_YEAR, page_clock_rtc_date.year, 1, 0);
     page_clock_create_dropdown(cont, ITEM_MONTH, page_clock_rtc_date.month, 2, 0);
@@ -498,9 +554,10 @@ static void page_clock_enter() {
     page_clock_build_options_from_date(&page_clock_rtc_date);
     page_clock_refresh_datetime();
     lv_obj_add_style(page_clock_items[ITEM_YEAR].data.obj, &style_dropdown, LV_PART_MAIN);
+    page_clock_update_cards(true);
 
 #ifdef HDZBOXPRO
-    lv_obj_set_style_border_color(page_clock_items[0].data.obj, lv_palette_main(LV_PALETTE_RED), 0);
+    lv_obj_set_style_border_color(page_clock_items[0].data.obj, lv_color_hex(UI_COLOR_ACCENT), 0);
 #endif
 }
 
@@ -527,7 +584,7 @@ static void page_clock_exit() {
 
 #ifdef HDZBOXPRO
     for (int i = 0; i < 6; i++) {
-        lv_obj_set_style_border_color(page_clock_items[i].data.obj, lv_color_hex(0x606060), 0);
+        lv_obj_set_style_border_color(page_clock_items[i].data.obj, lv_color_hex(UI_COLOR_BORDER_IDLE), 0);
     }
 #endif
 }
@@ -572,9 +629,10 @@ static void page_clock_on_roller(uint8_t key) {
         }
     }
 
-    if (page_clock_items[page_clock_item_selected].panel) {
+    if (page_clock_items[page_clock_item_selected].panel && !ui_theme_pills()) {
         lv_obj_clear_flag(page_clock_items[page_clock_item_selected].panel, LV_OBJ_FLAG_HIDDEN);
     }
+    page_clock_update_cards(true);
 
     switch (page_clock_items[page_clock_item_selected].type) {
     case ITEM_TYPE_OBJ:
@@ -586,9 +644,9 @@ static void page_clock_on_roller(uint8_t key) {
 #ifdef HDZBOXPRO
     for (int i = 0; i < 6; i++) {
         if (i == page_clock_item_selected) {
-            lv_obj_set_style_border_color(page_clock_items[i].data.obj, lv_palette_main(LV_PALETTE_RED), 0);
+            lv_obj_set_style_border_color(page_clock_items[i].data.obj, lv_color_hex(UI_COLOR_ACCENT), 0);
         } else {
-            lv_obj_set_style_border_color(page_clock_items[i].data.obj, lv_color_hex(0x606060), 0);
+            lv_obj_set_style_border_color(page_clock_items[i].data.obj, lv_color_hex(UI_COLOR_BORDER_IDLE), 0);
         }
     }
 #endif

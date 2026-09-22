@@ -12,6 +12,7 @@
 
 #include "core/self_test.h"
 #include "lang/language.h"
+#include "ui/ui_theme.h"
 #include "ui/page_common.h"
 #include "ui/page_scannow.h"
 #include "util/filesystem.h"
@@ -134,6 +135,7 @@ const setting_t g_setting_defaults = {
     .ease = {
         .no_dial = 0,
     },
+    .ui_theme = UI_THEME_DEFAULT,
     .osd = {
         .orbit = 2,
         .embedded_mode = EMBEDDED_4x3,
@@ -684,6 +686,11 @@ void settings_load(void) {
 
     //  no dial under video mode
     g_setting.ease.no_dial = fs_file_exists(NO_DIAL_FILE);
+
+    // ui theme
+    g_setting.ui_theme = ini_getl("ui", "theme", g_setting_defaults.ui_theme, SETTING_INI);
+    if (g_setting.ui_theme >= ui_theme_count())
+        g_setting.ui_theme = g_setting_defaults.ui_theme;
 
     // storage
     g_setting.storage.logging = settings_get_bool("storage", "logging", g_setting_defaults.storage.logging);

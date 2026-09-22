@@ -375,6 +375,7 @@ typedef struct {
     setting_storage_t storage;
     language_t language;
     setting_analog_rssi_t analog_rssi;
+    uint8_t ui_theme; // index into the ui_theme.c table (Goggle / Goggle2 only)
     bool has_all_features;
 } setting_t;
 

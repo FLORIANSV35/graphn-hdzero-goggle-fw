@@ -837,14 +837,14 @@ static void page_version_fw_select_create(const char *device, fw_select_t *fw_se
     lv_obj_set_layout(fw_select->container, LV_LAYOUT_GRID);
     lv_obj_clear_flag(fw_select->container, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_add_style(fw_select->container, &style_context, LV_PART_MAIN);
-    lv_obj_set_style_bg_color(fw_select->container, lv_color_make(19, 19, 19), 0);
+    lv_obj_set_style_bg_color(fw_select->container, lv_color_hex(UI_COLOR_BG_ROOT), 0);
     lv_obj_set_style_grid_column_dsc_array(fw_select->container, msgbox_col_dsc, 0);
     lv_obj_set_style_grid_row_dsc_array(fw_select->container, mbsbox_row_dsc, 0);
 
     fw_select->this.max = 3;
     create_select_item(&fw_select->this, fw_select->container);
     for (int i = 0; i < fw_select->this.max; ++i) {
-        lv_obj_set_style_bg_color(fw_select->this.panel[i], lv_color_make(0x44, 0x44, 0x44), 0);
+        lv_obj_set_style_bg_color(fw_select->this.panel[i], lv_color_hex(UI_COLOR_IDLE_BTN), 0);
     }
     fw_select->page = pp_version.p_arr;
     fw_select->dropdown = create_dropdown_item(fw_select->container, "", 1, 0, UI_VERSION_FIRMWARE_MSGBOX_SIZE, 1, 4, LV_GRID_ALIGN_START, UI_PAGE_TEXT_FONT);

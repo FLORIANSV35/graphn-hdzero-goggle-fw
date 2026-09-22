@@ -124,6 +124,7 @@ typedef struct {
     lv_obj_t *panel[MAX_PANELS];
     int cur;
     int max;
+    uint32_t no_card; // bit i set: row i never gets a background card (headers, merged rows)
 } panel_arr_t;
 
 struct menu_obj_s {
