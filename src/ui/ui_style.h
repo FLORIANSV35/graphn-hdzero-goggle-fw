@@ -28,6 +28,7 @@ extern lv_style_t style_silder_pressed_color;
 extern lv_style_t style_scan;
 extern lv_style_t style_select;
 extern lv_style_t style_dropdown;
+extern lv_style_t style_field_idle;
 extern lv_style_t style_keyboard[KB_STYLE_COUNT];
 extern lv_style_t style_pb, style_pb_dark;
 

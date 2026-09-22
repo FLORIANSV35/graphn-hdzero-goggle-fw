@@ -315,11 +315,10 @@ lv_obj_t *create_dropdown_item(lv_obj_t *parent, const char *options, int col, i
     lv_obj_set_size(obj, width, height);
     lv_obj_set_style_text_color(obj, lv_color_hex(TEXT_COLOR_DISABLE), STATE_DISABLED);
 #ifndef HDZBOXPRO
-    if (g_ui_theme->field_bg) {
-        lv_obj_set_style_bg_color(obj, lv_color_hex(g_ui_theme->field_bg), 0);
-        lv_obj_set_style_text_color(obj, lv_color_hex(g_ui_theme->field_text), 0);
-        lv_obj_set_style_border_color(obj, lv_color_hex(UI_COLOR_BORDER_IDLE), 0);
-    }
+    // Added (not local), so a page that highlights this specific field later
+    // (lv_obj_add_style(&style_dropdown), e.g. Clock's year/month/day) can
+    // still win over it -- see style_field_idle's comment in ui_style.c.
+    lv_obj_add_style(obj, &style_field_idle, 0);
 #endif
 #ifdef HDZBOXPRO
     lv_obj_set_style_bg_color(obj, lv_color_hex(UI_COLOR_BORDER_IDLE), 0); // bg color

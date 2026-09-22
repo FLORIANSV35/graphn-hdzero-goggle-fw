@@ -19,6 +19,7 @@ lv_style_t style_scan;
 lv_style_t style_select;
 lv_style_t style_osd;
 lv_style_t style_dropdown;
+lv_style_t style_field_idle;
 lv_style_t style_keyboard[KB_STYLE_COUNT];
 lv_style_t style_pb, style_pb_dark;
 
@@ -151,6 +152,23 @@ int style_init(void) {
     lv_style_set_text_color(&style_dropdown, lv_color_hex(UI_STYLE_DROPDOWN_TEXT_COLOR));
     lv_style_set_border_width(&style_dropdown, 2);
     lv_style_set_border_color(&style_dropdown, lv_color_hex(UI_COLOR_ACCENT));
+
+#ifndef HDZBOXPRO
+    // Idle look for a dropdown FIELD (closed box) in the dark themes. Applied
+    // with lv_obj_add_style rather than as local per-object properties, so
+    // that pages needing a per-item "you are here" indicator among several
+    // dropdowns sharing one row (Clock: year/month/day, hour/min/sec) can
+    // still lv_obj_add_style(&style_dropdown) on top to highlight just the
+    // selected one -- a local style would always win over both, permanently
+    // hiding that highlight.
+    lv_style_reset(&style_field_idle);
+    lv_style_init(&style_field_idle);
+    if (g_ui_theme->field_bg) {
+        lv_style_set_bg_color(&style_field_idle, lv_color_hex(g_ui_theme->field_bg));
+        lv_style_set_text_color(&style_field_idle, lv_color_hex(g_ui_theme->field_text));
+        lv_style_set_border_color(&style_field_idle, lv_color_hex(UI_COLOR_BORDER_IDLE));
+    }
+#endif
 
     lv_style_reset(&style_keyboard[KB_STYLE_MAIN]);
     lv_style_init(&style_keyboard[KB_STYLE_MAIN]);
