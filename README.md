@@ -39,8 +39,8 @@ Compiling HDZero Goggles:
 ~/hdzero-goggle/build_goggle$ make clean all -j $(nproc)
 ```
 
-The firmware is generated as hdzero-goggle/build_goggle/out/HDZERO_GOGGLE-77-206-1.2.1-graphn-<commit>.bin
-Tagged releases omit the commit suffix.
+The firmware is generated as hdzero-goggle/build_goggle/out/HDZERO_GOGGLE-77-206-26.09.30-graphn-<commit>.bin
+(version = year.month.this-month's-commit-count). Tagged releases omit the commit suffix.
 
 Compiling HDZero BoxPro:
 ```
@@ -48,8 +48,8 @@ Compiling HDZero BoxPro:
 ~/hdzero-goggle/build_boxpro$ make clean all -j $(nproc)
 ```
 
-The firmware is generated as hdzero-goggle/build_boxpro/out/HDZERO_BOXPRO-77-211-1.2.1-graphn-<commit>.bin
-Tagged releases omit the commit suffix.
+The firmware is generated as hdzero-goggle/build_boxpro/out/HDZERO_BOXPRO-77-211-26.09.30-graphn-<commit>.bin
+(version = year.month.this-month's-commit-count). Tagged releases omit the commit suffix.
 
 ### Building the firmware using nix
 

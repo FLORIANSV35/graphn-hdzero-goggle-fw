@@ -6,7 +6,13 @@ function make_img_md5() {
 }
 
 function get_app_version() {
-	local base_version=$(cat "$ROOT_DIR/../VERSION")
+    # YY.MM.NN-graphn: year, month, and this month's commit count (counts
+    # commits since the 1st of the current month, so it rolls over to 01 on
+    # its own at the start of each month -- no counter to maintain by hand).
+    local yy=$(date +%y)
+    local mm=$(date +%m)
+    local nn=$(printf "%02d" "$(git log --since="$(date +%Y-%m-01)" --oneline | wc -l)")
+    local base_version="${yy}.${mm}.${nn}-graphn"
 
     # check if we are on a tag
     git describe --exact-match --tags HEAD > /dev/null 2>&1
