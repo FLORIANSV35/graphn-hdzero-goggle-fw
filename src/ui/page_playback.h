@@ -48,9 +48,15 @@ typedef struct {
     int cur_sel;
 } media_db_t;
 
+typedef enum {
+    PB_DAY_ROW_MONTH, // "MM-YY" header, shown once per month
+    PB_DAY_ROW_DAY,   // "DD" under the month header it belongs to
+} pb_day_row_kind_t;
+
 typedef struct {
-    char label[10]; // "DD-MM-YY"
-    int start_seq;  // seq (0 = most recent) of the first item on this day
+    pb_day_row_kind_t kind;
+    char label[8];  // "MM-YY" (month row) or "DD" (day row)
+    int start_seq;  // seq (0 = most recent) of the first item this row covers; meaningless for month rows
 } pb_day_entry_t;
 
 typedef struct {

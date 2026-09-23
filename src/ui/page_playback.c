@@ -147,14 +147,17 @@ static lv_obj_t *page_playback_create(lv_obj_t *parent, panel_arr_t *arr) {
                        pb_ui[pos].y + UI_PAGE_PLAYBACK_ITEM_PREVIEW_H + 10);
     }
 
-    // Day history strip: one "DD-MM-YY" row per distinct day present on the
-    // card, most recent at the top (matches seq order, see build_day_list),
-    // with a cursor tracking whichever day the highlighted clip is on.
+    // Day history strip: a "MM-YY" header once per distinct month, each
+    // followed by one indented "DD" row per distinct day within it, most
+    // recent at the top (matches seq order, see build_day_list), with a
+    // cursor tracking whichever day row the highlighted clip is on. Text,
+    // color and indent are set per-row in update_day_list_ui() since any
+    // row can hold either a month header or a day, depending on the data.
     for (uint32_t i = 0; i < UI_PLAYBACK_DAYS_VISIBLE; i++) {
         day_labels[i] = lv_label_create(cont);
         lv_obj_set_style_text_font(day_labels[i], UI_PLAYBACK_DAYS_FONT, 0);
         lv_obj_set_style_text_color(day_labels[i], lv_color_hex(TEXT_COLOR_DEFAULT), 0);
-        lv_obj_set_pos(day_labels[i], UI_PLAYBACK_DAYS_X + 14, UI_PLAYBACK_DAYS_Y + i * UI_PLAYBACK_DAYS_ROW_H);
+        lv_obj_set_pos(day_labels[i], UI_PLAYBACK_DAYS_X, UI_PLAYBACK_DAYS_Y + i * UI_PLAYBACK_DAYS_ROW_H);
         lv_obj_add_flag(day_labels[i], LV_OBJ_FLAG_HIDDEN);
     }
 
@@ -421,34 +424,60 @@ static int walk_sdcard() {
     return media_db.count;
 }
 
-// Walks seq order (0 = most recent, see get_list()) and records where each
-// calendar day starts. Capped at UI_PLAYBACK_DAYS_VISIBLE (and the backing
-// array's MAX_DAY_ENTRIES): older days beyond that just don't get a row
-// rather than overflowing the list.
+// Walks seq order (0 = most recent, see get_list()) and builds the display
+// rows: a "MM-YY" header the first time a month is seen, then one "DD" row
+// per distinct day (within that month) that follows it. Capped at
+// UI_PLAYBACK_DAYS_VISIBLE (and the backing array's MAX_DAY_ENTRIES): once a
+// month header + its next day row wouldn't both fit, older entries just
+// don't get a row rather than overflowing the list or leaving an orphaned
+// header with no day underneath.
 static void build_day_list(void) {
     day_count = 0;
-    for (int seq = 0; seq < media_db.count && day_count < UI_PLAYBACK_DAYS_VISIBLE &&
-                       day_count < MAX_DAY_ENTRIES;
-         seq++) {
+    char last_month_label[8] = "";
+    int last_mday = -1;
+
+    for (int seq = 0; seq < media_db.count; seq++) {
         media_file_node_t *pnode = get_list(seq);
         struct tm tmv;
         localtime_r(&pnode->mtime, &tmv);
 
-        char label[10];
-        snprintf(label, sizeof(label), "%02d-%02d-%02d", tmv.tm_mday, tmv.tm_mon + 1, tmv.tm_year % 100);
+        char month_label[8];
+        snprintf(month_label, sizeof(month_label), "%02d-%02d", tmv.tm_mon + 1, tmv.tm_year % 100);
 
-        if (day_count == 0 || strcmp(day_list[day_count - 1].label, label) != 0) {
-            snprintf(day_list[day_count].label, sizeof(day_list[day_count].label), "%s", label);
+        bool new_month = strcmp(last_month_label, month_label) != 0;
+        if (!new_month && tmv.tm_mday == last_mday)
+            continue; // same calendar day as the last row -- no new row needed
+
+        int rows_needed = new_month ? 2 : 1; // month header (if new) + the day row itself
+        if (day_count + rows_needed > UI_PLAYBACK_DAYS_VISIBLE || day_count + rows_needed > MAX_DAY_ENTRIES)
+            break;
+
+        if (new_month) {
+            day_list[day_count].kind = PB_DAY_ROW_MONTH;
+            snprintf(day_list[day_count].label, sizeof(day_list[day_count].label), "%s", month_label);
             day_list[day_count].start_seq = seq;
             day_count++;
+            snprintf(last_month_label, sizeof(last_month_label), "%s", month_label);
         }
+
+        day_list[day_count].kind = PB_DAY_ROW_DAY;
+        snprintf(day_list[day_count].label, sizeof(day_list[day_count].label), "%02d", tmv.tm_mday);
+        day_list[day_count].start_seq = seq;
+        day_count++;
+
+        last_mday = tmv.tm_mday;
     }
 }
 
 static void update_day_list_ui(void) {
     for (uint32_t i = 0; i < UI_PLAYBACK_DAYS_VISIBLE; i++) {
         if ((int)i < day_count) {
+            bool is_month = day_list[i].kind == PB_DAY_ROW_MONTH;
             lv_label_set_text(day_labels[i], day_list[i].label);
+            lv_obj_set_style_text_color(day_labels[i],
+                                        lv_color_hex(is_month ? UI_COLOR_ACCENT : TEXT_COLOR_DEFAULT), 0);
+            lv_obj_set_pos(day_labels[i], UI_PLAYBACK_DAYS_X + (is_month ? 0 : 22),
+                          UI_PLAYBACK_DAYS_Y + i * UI_PLAYBACK_DAYS_ROW_H);
             lv_obj_clear_flag(day_labels[i], LV_OBJ_FLAG_HIDDEN);
         } else {
             lv_obj_add_flag(day_labels[i], LV_OBJ_FLAG_HIDDEN);
@@ -456,21 +485,24 @@ static void update_day_list_ui(void) {
     }
 }
 
-// Repoints the cursor at whichever day media_db.cur_sel currently falls on.
-// day_list is ordered by increasing start_seq (top = most recent), so the
-// target row is the last one whose start_seq doesn't exceed cur_sel.
+// Repoints the cursor at whichever day row media_db.cur_sel currently falls
+// on (month header rows are never a cursor target). Rows are ordered by
+// increasing start_seq (top = most recent), so the target is the last DAY
+// row whose start_seq doesn't exceed cur_sel.
 static void update_day_cursor(void) {
-    if (day_count == 0) {
-        lv_obj_add_flag(day_cursor, LV_OBJ_FLAG_HIDDEN);
-        return;
-    }
-
-    int idx = 0;
+    int idx = -1;
     for (int i = 0; i < day_count; i++) {
+        if (day_list[i].kind != PB_DAY_ROW_DAY)
+            continue;
         if (day_list[i].start_seq <= media_db.cur_sel)
             idx = i;
         else
             break;
+    }
+
+    if (idx < 0) {
+        lv_obj_add_flag(day_cursor, LV_OBJ_FLAG_HIDDEN);
+        return;
     }
 
     lv_obj_clear_flag(day_cursor, LV_OBJ_FLAG_HIDDEN);
