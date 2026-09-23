@@ -26,7 +26,7 @@ reported, rather than the internal VRX's own channel.
 
 13 runtime-selectable UI themes (a new "Theme" page in the menu): the original look, plus 12 dark, pill-style
 palettes (Braise, Ambre, Glace, Ultraviolet, Radar, Magenta, Rouge pur, Bordeaux & or, Citron, Bleu électrique,
-Sarcelle, Monochrome). Switching is instant and needs no reboot.
+Sarcelle, Monochrome). The selected theme is applied after restarting the goggles.
 
 | Monochrome | Ultraviolet |
 | :---: | :---: |
