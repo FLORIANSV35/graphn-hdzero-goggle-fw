@@ -126,6 +126,7 @@ static osd_element_t osd_element_list[OSD_GOGGLE_NUM] = {
     {"Antenna 2", "ant1"},
     {"Antenna 3", "ant2"},
     {"Antenna 4", "ant3"},
+    {"Low SD Space", "sd_low"},
     {"Analog RSSI", "analog_rssi_bar"},
     {"Temperature Top", "goggle_temp_top"},
     {"Temperature Left", "goggle_temp_left"},
@@ -172,7 +173,7 @@ static void fill_osd_elements_str() {
 #if defined(HDZBOXPRO) || defined(HDZGOGGLE2)
     int max_element = OSD_GOGGLE_ANALOG_RSSI;
 #else
-    int max_element = OSD_GOGGLE_ANT3;
+    int max_element = OSD_GOGGLE_SD_LOW;
 #endif
 
     if (g_setting.storage.selftest) {

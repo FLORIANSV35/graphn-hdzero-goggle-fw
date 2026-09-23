@@ -254,7 +254,7 @@ void osd_battery_low_show() {
 // bar's own text (ui_statusbar.c) -- this is the one visible while actually
 // watching video, when neither of the others is on screen.
 static void osd_sd_low_show(void) {
-    if (g_sdcard_enable && sdcard_is_low())
+    if (g_sdcard_enable && sdcard_is_low() && g_setting.osd.element[OSD_GOGGLE_SD_LOW].show)
         lv_obj_clear_flag(g_osd_hdzero.sd_low[is_fhd], LV_OBJ_FLAG_HIDDEN);
     else
         lv_obj_add_flag(g_osd_hdzero.sd_low[is_fhd], LV_OBJ_FLAG_HIDDEN);
@@ -819,6 +819,11 @@ void osd_show_all_elements() {
     else
         lv_obj_add_flag(g_osd_hdzero.ant3[is_fhd], LV_OBJ_FLAG_HIDDEN);
 
+    if (g_setting.osd.element[OSD_GOGGLE_SD_LOW].show)
+        lv_obj_clear_flag(g_osd_hdzero.sd_low[is_fhd], LV_OBJ_FLAG_HIDDEN);
+    else
+        lv_obj_add_flag(g_osd_hdzero.sd_low[is_fhd], LV_OBJ_FLAG_HIDDEN);
+
 #if defined(HDZBOXPRO) || defined(HDZGOGGLE2)
     if (osd_element_preview_analog) {
         // analog source: HDZero-only elements are not drawn
@@ -1103,16 +1108,9 @@ static void embedded_osd_init(uint8_t fhd) {
     lv_obj_align(g_osd_hdzero.vtx_sent[fhd], LV_ALIGN_TOP_MID, 0, fhd ? 90 : 60);
     lv_obj_add_flag(g_osd_hdzero.vtx_sent[fhd], LV_OBJ_FLAG_HIDDEN);
 
-    // Fixed position (bottom-mid), not one of the user-repositionable
-    // OSD_GOGGLE_* elements -- reuses the channel slot's position struct as a
-    // throwaway initial value for osd_object_create_label, same trick
-    // vtx_sent uses above, since the position is overridden right after.
-    osd_object_create_label(fhd, &g_osd_hdzero.sd_low[fhd], "LOW SD SPACE", &g_setting.osd.element[OSD_GOGGLE_CHANNEL].position, so);
-    lv_obj_set_style_bg_color(g_osd_hdzero.sd_low[fhd], lv_color_hex(0x010101), LV_PART_MAIN);
-    lv_obj_set_style_bg_opa(g_osd_hdzero.sd_low[fhd], LV_OPA_100, 0);
-    lv_obj_set_style_radius(g_osd_hdzero.sd_low[fhd], 8, 0);
-    lv_obj_set_style_text_color(g_osd_hdzero.sd_low[fhd], lv_color_make(0xFF, 0xA5, 0x00), 0);
-    lv_obj_align(g_osd_hdzero.sd_low[fhd], LV_ALIGN_BOTTOM_MID, 0, fhd ? -90 : -60);
+    osd_object_create_label(fhd, &g_osd_hdzero.sd_low[fhd], "LOW SD SPACE", &g_setting.osd.element[OSD_GOGGLE_SD_LOW].position, so);
+    lv_obj_set_style_bg_opa(g_osd_hdzero.sd_low[fhd], LV_OPA_TRANSP, 0);
+    lv_obj_set_style_text_color(g_osd_hdzero.sd_low[fhd], lv_color_make(0xFF, 0x00, 0x00), 0);
     lv_obj_add_flag(g_osd_hdzero.sd_low[fhd], LV_OBJ_FLAG_HIDDEN);
 
     osd_resource_path(buf, "%s", is_fhd, noSdcard_bmp);
@@ -1160,6 +1158,7 @@ void osd_update_element_positions() {
     osd_object_set_pos(is_fhd, g_osd_hdzero.ant1[is_fhd], &g_setting.osd.element[OSD_GOGGLE_ANT1].position);
     osd_object_set_pos(is_fhd, g_osd_hdzero.ant2[is_fhd], &g_setting.osd.element[OSD_GOGGLE_ANT2].position);
     osd_object_set_pos(is_fhd, g_osd_hdzero.ant3[is_fhd], &g_setting.osd.element[OSD_GOGGLE_ANT3].position);
+    osd_object_set_pos(is_fhd, g_osd_hdzero.sd_low[is_fhd], &g_setting.osd.element[OSD_GOGGLE_SD_LOW].position);
 
 #if defined(HDZBOXPRO) || defined(HDZGOGGLE2)
     osd_analog_rssi_update_location();
