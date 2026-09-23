@@ -28,6 +28,12 @@ reported, rather than the internal VRX's own channel.
 palettes (Braise, Ambre, Glace, Ultraviolet, Radar, Magenta, Rouge pur, Bordeaux & or, Citron, Bleu électrique,
 Sarcelle, Monochrome). Switching is instant and needs no reboot.
 
+| Monochrome | Ultraviolet |
+| :---: | :---: |
+| ![Monochrome theme](docs/themes/monochrome.png) | ![Ultraviolet theme](docs/themes/ultraviolet.png) |
+| **Bleu électrique** | **Radar** |
+| ![Bleu électrique theme](docs/themes/bleu-electrique.png) | ![Radar theme](docs/themes/radar.png) |
+
 ### Playback
 
 - Clips are sorted by actual recency (file modification time), not filename.
