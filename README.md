@@ -2,6 +2,18 @@
 
 Private fork of the HDZero goggles firmware (Goggle, Goggle2, BoxPro), built and versioned as `graphn`.
 
+## ⚠️ Disclaimer
+
+This is an unofficial, community build. It is provided **as is, without any warranty**, and it is **not
+supported by HDZero**. Flashing it is done entirely **at your own risk**.
+
+- The authors of this fork are **not responsible** for any damage, malfunction or loss of use resulting from
+  it — including goggles that fail to boot, hang on the boot logo, or end up bricked.
+- To go back to the official HDZero firmware if something goes wrong, you may have to reflash the goggles
+  with a **Phoenix Card** (HDZero's recovery tool). Have one available before you experiment, or make sure
+  you are comfortable without your goggles until you get one.
+- Don't flash while the battery is low, and never power off or unplug the goggles during an update.
+
 ## Changes in this fork
 
 ### Startup
