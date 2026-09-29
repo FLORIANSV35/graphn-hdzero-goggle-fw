@@ -20,8 +20,6 @@
 #include "ui/page_common.h"
 #include "ui/page_elrs.h"
 #include "ui/page_fans.h"
-#include "ui/page_theme.h"
-#include "ui/page_focus_chart.h"
 #include "ui/page_headtracker.h"
 #include "ui/page_imagesettings.h"
 #include "ui/page_input.h"
@@ -33,6 +31,7 @@
 #include "ui/page_sleep.h"
 #include "ui/page_source.h"
 #include "ui/page_storage.h"
+#include "ui/page_tools.h"
 #include "ui/page_version.h"
 #include "ui/page_wifi.h"
 #include "ui/ui_image_setting.h"
@@ -439,12 +438,9 @@ void main_menu_init(void) {
     page_packs[page_packs_count++] = &pp_playback;
     page_packs[page_packs_count++] = &pp_storage;
     page_packs[page_packs_count++] = &pp_version;
-    page_packs[page_packs_count++] = &pp_focus_chart;
+    page_packs[page_packs_count++] = &pp_tools;
     page_packs[page_packs_count++] = &pp_clock;
     page_packs[page_packs_count++] = &pp_input;
-#if !defined(HDZBOXPRO)
-    page_packs[page_packs_count++] = &pp_theme;
-#endif
 #if defined(HDZBOXPRO) || defined(HDZGOGGLE2)
     page_packs[page_packs_count++] = &pp_analog_rssi;
 #endif

@@ -1,5 +1,4 @@
-#ifndef _PAGE_THEME_H
-#define _PAGE_THEME_H
+#pragma once
 
 #ifdef __cplusplus
 extern "C" {
@@ -9,10 +8,8 @@ extern "C" {
 
 #include "ui/ui_main_menu.h"
 
-extern page_pack_t pp_theme;
+extern page_pack_t pp_tools;
 
 #ifdef __cplusplus
 }
-#endif
-
 #endif

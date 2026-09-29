@@ -73,6 +73,7 @@ extern "C" {
 #define LLOCK_bmp        "llock.bmp"
 #define DEF_VIDEOICON    "videoicon.jpg"
 #define FOCUS_CHART_IMG  "focus_chart.png"
+#define FREQ_CHART_IMG   "freq_chart.png"
 #define DIAL_CLICK_IMG   "dial_click.png"
 #define DIAL_SCROLL_IMG  "dial_scroll.png"
 #define RIGHT_BUTTON_IMG "right_button.png"
