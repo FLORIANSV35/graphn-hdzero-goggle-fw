@@ -221,7 +221,11 @@ static lv_obj_t *page_playback_create(lv_obj_t *parent, panel_arr_t *arr) {
     action_menu_bg = lv_obj_create(lv_scr_act());
     lv_obj_clear_flag(action_menu_bg, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_width(action_menu_bg, UI_PAGE_MSG_BOX_SIZE);
-    lv_obj_set_height(action_menu_bg, LV_SIZE_CONTENT);
+    // Fixed height rather than LV_SIZE_CONTENT: the rows start hidden
+    // (LV_OBJ_FLAG_HIDDEN, unhidden per clip in action_menu_build()), and
+    // LVGL's content-size auto-sizing doesn't count hidden children, so the
+    // container was sizing itself to ~one row at creation time.
+    lv_obj_set_height(action_menu_bg, PB_ACTION_MAX_ROWS * 50 + 40);
     lv_obj_center(action_menu_bg);
     lv_obj_set_style_bg_color(action_menu_bg, lv_color_hex(UI_COLOR_BG_ROOT), 0);
     lv_obj_set_style_border_width(action_menu_bg, 3, 0);

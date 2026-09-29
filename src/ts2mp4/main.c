@@ -15,6 +15,7 @@
 
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
+#include <libavutil/dict.h>
 
 static void print_ff_error(const char *prefix, int err) {
     char buf[256];
@@ -37,7 +38,17 @@ int main(int argc, char *argv[]) {
     AVPacket *pkt = NULL;
     int ret = 0;
 
-    ret = avformat_open_input(&ifmt_ctx, in_path, NULL, NULL);
+    // The DVR .ts doesn't repeat SPS/PPS/codec params often enough for the
+    // default probe window, so avformat_find_stream_info() below was failing
+    // to determine width/height/sample rate ("Could not find codec
+    // parameters ... unspecified size"), which then made the mp4 muxer
+    // reject the header ("dimensions not set"). Widen the probe explicitly.
+    AVDictionary *open_opts = NULL;
+    av_dict_set(&open_opts, "probesize", "50000000", 0);      // 50MB (default 5MB)
+    av_dict_set(&open_opts, "analyzeduration", "10000000", 0); // 10s (default ~5s, sometimes reported as 0 for ts)
+
+    ret = avformat_open_input(&ifmt_ctx, in_path, NULL, &open_opts);
+    av_dict_free(&open_opts);
     if (ret < 0) {
         print_ff_error("could not open input", ret);
         return 1;
