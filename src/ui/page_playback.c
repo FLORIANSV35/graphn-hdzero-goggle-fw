@@ -216,8 +216,8 @@ static lv_obj_t *page_playback_create(lv_obj_t *parent, panel_arr_t *arr) {
 
     // Long-press action menu: a small centered panel with up to 3 rows,
     // styled like the status box. Text and row count are (re)built per
-    // clip in action_menu_build(); the highlighted row's text just turns
-    // the accent color, matching the day-history cursor's approach.
+    // clip in action_menu_build(); the selected row gets a solid accent
+    // background (not just a text-color change) so it's actually visible.
     action_menu_bg = lv_obj_create(lv_scr_act());
     lv_obj_clear_flag(action_menu_bg, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_width(action_menu_bg, UI_PAGE_MSG_BOX_SIZE);
@@ -233,7 +233,13 @@ static lv_obj_t *page_playback_create(lv_obj_t *parent, panel_arr_t *arr) {
         action_menu_row[i] = lv_label_create(action_menu_bg);
         lv_obj_set_style_text_font(action_menu_row[i], UI_PAGE_TEXT_FONT, 0);
         lv_obj_set_style_text_color(action_menu_row[i], lv_color_hex(TEXT_COLOR_DEFAULT), 0);
-        lv_obj_align(action_menu_row[i], LV_ALIGN_TOP_LEFT, 0, i * 50);
+        lv_obj_set_style_bg_opa(action_menu_row[i], LV_OPA_TRANSP, 0);
+        lv_obj_set_style_bg_color(action_menu_row[i], lv_color_hex(UI_STYLE_SELECT_BG_COLOR), 0);
+        lv_obj_set_style_radius(action_menu_row[i], 4, 0);
+        lv_obj_set_style_pad_hor(action_menu_row[i], 10, 0);
+        lv_obj_set_style_pad_ver(action_menu_row[i], 6, 0);
+        lv_obj_set_width(action_menu_row[i], UI_PAGE_MSG_BOX_SIZE - 40);
+        lv_obj_align(action_menu_row[i], LV_ALIGN_TOP_LEFT, -10, i * 50);
         lv_obj_add_flag(action_menu_row[i], LV_OBJ_FLAG_HIDDEN);
     }
 
@@ -698,6 +704,13 @@ static void toggle_favorite(int const seq) {
         mark_video_file(seq);
 }
 
+// The helper binary and, deliberately, its log + result file -- on the SD
+// card (not /tmp, which is on internal storage the SD card doesn't expose)
+// so a failure can actually be diagnosed by pulling the card.
+#define TS2MP4_BIN         "/mnt/app/app/record/ts2mp4"
+#define TS2MP4_LOG_FILE    REC_diskPATH "/ts2mp4.log"
+#define TS2MP4_RESULT_FILE REC_diskPATH "/ts2mp4.result"
+
 // Runs the ts2mp4 helper out of process (this process has no ffmpeg linked)
 // and waits for it, bounded, polling a result file -- same defensive pattern
 // as the SD format/repair flows in page_storage.c. Deletes the source .ts
@@ -705,23 +718,25 @@ static void toggle_favorite(int const seq) {
 // untouched and any partial .mp4 is removed.
 static void *convert_thread(void *arg) {
     (void)arg;
-    const char *results_file = "/tmp/ts2mp4.result";
-    unlink(results_file);
+    unlink(TS2MP4_RESULT_FILE);
 
+    // Wrapped in a subshell so the WHOLE sequence backgrounds -- "a; b &"
+    // only backgrounds b, which would leave system_exec() blocking on the
+    // helper itself (harmless here since we're already off the LVGL thread,
+    // but it defeats the point of the bounded poll below).
     char cmd[1400];
     snprintf(cmd, sizeof(cmd),
-             "LD_LIBRARY_PATH=/lib/libffmpeg:/lib/eyesee-mpp "
-             "/mnt/app/app/record/ts2mp4 \"%s\" \"%s\" > /tmp/ts2mp4.log 2>&1; echo $? > %s &",
-             convert_ts_path, convert_mp4_path, results_file);
+             "( LD_LIBRARY_PATH=/lib/libffmpeg:/lib/eyesee-mpp %s \"%s\" \"%s\" > %s 2>&1; echo $? > %s ) &",
+             TS2MP4_BIN, convert_ts_path, convert_mp4_path, TS2MP4_LOG_FILE, TS2MP4_RESULT_FILE);
     system_exec(cmd);
 
     int elapsed = 0;
-    while (!fs_file_exists(results_file) && ++elapsed < 300) {
+    while (!fs_file_exists(TS2MP4_RESULT_FILE) && ++elapsed < 300) {
         sleep(1);
     }
 
     bool ok = false;
-    FILE *f = fopen(results_file, "r");
+    FILE *f = fopen(TS2MP4_RESULT_FILE, "r");
     if (f) {
         int code = -1;
         if (fscanf(f, "%d", &code) == 1)
@@ -742,7 +757,7 @@ static void *convert_thread(void *arg) {
     walk_sdcard();
     update_page();
     page_playback_open_status_box(ok ? "Converted" : "Conversion failed",
-                                   ok ? "Saved as .mp4." : "Could not convert this clip.\nSee /tmp/ts2mp4.log on the SD card.");
+                                   ok ? "Saved as .mp4." : "Could not convert this clip.\nSee ts2mp4.log at the SD card root.");
     status_deleting = true; // dismissible via RIGHT_KEY_CLICK/PRESS
     status_is_delete_confirm = false;
     pthread_mutex_unlock(&lvgl_mutex);
@@ -755,6 +770,13 @@ static void start_convert(int const seq) {
     media_file_node_t const *const pnode = get_list(seq);
     if (!pnode || convert_running || strcasecmp(pnode->ext, REC_packTS) != 0)
         return;
+
+    if (!fs_file_exists(TS2MP4_BIN)) {
+        page_playback_open_status_box("Convert to MP4", "ts2mp4 helper not found on this firmware.");
+        status_deleting = true;
+        status_is_delete_confirm = false;
+        return;
+    }
 
     char dir[300];
     node_dir(pnode, dir, sizeof(dir));
@@ -824,8 +846,9 @@ static void action_menu_build(int seq) {
 
 static void action_menu_update_highlight(void) {
     for (int i = 0; i < action_menu_row_count; i++) {
-        lv_obj_set_style_text_color(action_menu_row[i],
-                                     lv_color_hex(i == action_menu_sel ? UI_COLOR_ACCENT : TEXT_COLOR_DEFAULT), 0);
+        bool const sel = (i == action_menu_sel);
+        lv_obj_set_style_bg_opa(action_menu_row[i], sel ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+        lv_obj_set_style_text_color(action_menu_row[i], lv_color_hex(sel ? UI_COLOR_ACCENT : TEXT_COLOR_DEFAULT), 0);
     }
 }
 
@@ -1019,9 +1042,9 @@ void pb_key(uint8_t const key) {
         if (status_displayed) {
             status_deleting = page_playback_close_status_box();
             status_is_delete_confirm = false;
-        } else {
-            toggle_favorite(media_db.cur_sel);
         }
+        // Short func press otherwise does nothing -- Favorite now only lives
+        // in the long-press action menu (RIGHT_KEY_PRESS).
         break;
 
     case RIGHT_KEY_PRESS:
