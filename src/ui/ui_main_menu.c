@@ -333,10 +333,17 @@ void main_menu_open_page(page_pack_t *pp) {
     lv_obj_t *entry = lv_obj_get_parent(pp->label);
     lv_event_send(entry, LV_EVENT_CLICKED, NULL);
 
-    // Tab highlight, row selection and .enter() -- same as pressing Enter on
-    // this row from the sidebar would trigger.
-    app_state_push(APP_STATE_SUBMENU);
-    submenu_enter();
+    // Tab highlight and .enter() so pp's content is populated and visible --
+    // but deliberately NOT submenu_enter()/APP_STATE_SUBMENU: this is a
+    // preview (land on the sidebar, looking at pp's page), not navigation
+    // into it. Entering would also highlight its first selectable card,
+    // which is the "inside" look this is meant to avoid. Whichever key
+    // actually enters the page (Enter/click) still works as normal from
+    // APP_STATE_MAINMENU.
+    select_menu_tab(pp);
+    if (pp->enter) {
+        pp->enter();
+    }
 
     // Called from start_running(), this runs before the main loop starts
     // ticking lv_timer_handler() on its own (see thread_boot_progress's own
