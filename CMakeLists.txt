@@ -253,6 +253,20 @@ if(NOT EMULATOR_BUILD)
 		softwinner
 	)
 
+	# ts2mp4: standalone .ts -> .mp4 remux tool, launched on demand from the
+	# UI app's Playback page (system_exec()) -- ffmpeg isn't linked into
+	# HDZGOGGLE itself, only into this and record (see note above).
+	file(GLOB SRC_FILES_TS2MP4 "src/ts2mp4/*.c" "src/ts2mp4/*.h")
+
+	add_executable(ts2mp4
+		${SRC_FILES_TS2MP4}
+	)
+	target_link_libraries(ts2mp4 PRIVATE
+		${STANDARD_LIBRARIES}
+
+		ffmpeg
+	)
+
 	# rtspLive application
 	file(GLOB SRC_FILES_RTSPLIVE "src/rtspLive/*.cpp" "src/rtspLive/*.hh")
 	file(GLOB SRC_FILES_RTSPLIVE_STREAM "src/rtspLive/stream/*.c" "src/rtspLive/stream/*.h")
@@ -293,11 +307,13 @@ if(NOT EMULATOR_BUILD)
 		COMMAND cp ${PROJECT_NAME} ${CMAKE_CURRENT_BINARY_DIR}/out/
 		COMMAND cp record ${CMAKE_CURRENT_BINARY_DIR}/out/
 		COMMAND cp rtspLive ${CMAKE_CURRENT_BINARY_DIR}/out/
+		COMMAND cp ts2mp4 ${CMAKE_CURRENT_BINARY_DIR}/out/
 		COMMAND cp ${PROJECT_NAME} ${OS_APP_PATH}
 		COMMAND cp record ${RECORD_APP_PATH}
 		COMMAND cp rtspLive ${RECORD_APP_PATH}
+		COMMAND cp ts2mp4 ${RECORD_APP_PATH}
 		COMMAND cd ${CMAKE_CURRENT_BINARY_DIR} && ./mkapp/mkapp_ota.sh
-		DEPENDS MKAPP ${PROJECT_NAME} record rtspLive
+		DEPENDS MKAPP ${PROJECT_NAME} record rtspLive ts2mp4
 	)
 	add_custom_target(${PROJECT_NAME}-OTA ALL
 		DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/out/${PROJECT_NAME}

@@ -57,6 +57,39 @@ static void build_day_list(void);
 static void update_day_list_ui(void);
 static void update_day_cursor(void);
 
+// Whether the currently-shown status box (page_playback_open_status_box) can
+// be dismissed by RIGHT_KEY_CLICK/RIGHT_KEY_PRESS -- file-scope (not just
+// pb_key()-local) so the background MP4-conversion thread can drive the same
+// box for its progress/result message.
+static bool status_deleting = false;
+// Whether DIAL_KEY_CLICK on the current box should delete the selected clip
+// (the original delete-confirmation box) rather than just dismiss an
+// informational one (e.g. a conversion result).
+static bool status_is_delete_confirm = false;
+
+// Long-press action menu (RIGHT_KEY_PRESS on a clip): Favorite / Convert to
+// MP4 (only for .ts clips) / Remove.
+typedef enum {
+    PB_ACTION_FAVORITE,
+    PB_ACTION_CONVERT,
+    PB_ACTION_REMOVE,
+} pb_action_t;
+#define PB_ACTION_MAX_ROWS 3
+static lv_obj_t *action_menu_bg;
+static lv_obj_t *action_menu_row[PB_ACTION_MAX_ROWS];
+static pb_action_t action_menu_action[PB_ACTION_MAX_ROWS];
+static int action_menu_row_count;
+static int action_menu_sel;
+static bool action_menu_open;
+
+// .ts -> .mp4 conversion (remux, no re-encode) via the standalone ts2mp4
+// helper binary -- ffmpeg isn't linked into this process, only into the
+// record/ts2mp4 executables (see CMakeLists.txt), so the actual work happens
+// out of process.
+static bool convert_running;
+static char convert_ts_path[512];
+static char convert_mp4_path[512];
+
 /**
  * Displays the status message box.
  */
@@ -171,7 +204,7 @@ static lv_obj_t *page_playback_create(lv_obj_t *parent, panel_arr_t *arr) {
     lv_obj_add_flag(day_cursor, LV_OBJ_FLAG_HIDDEN);
 
     lv_obj_t *label = lv_label_create(cont);
-    snprintf(buf, sizeof(buf), "*%s\n**%s", _lang("Long press the Enter button to exit"), _lang("Long press the Func button to delete"));
+    snprintf(buf, sizeof(buf), "*%s\n**%s", _lang("Long press the Enter button to exit"), _lang("Long press the Func button for more options"));
     lv_label_set_text(label, buf);
     lv_obj_set_style_text_font(label, UI_PAGE_LABEL_FONT, 0);
     lv_obj_set_style_text_align(label, LV_TEXT_ALIGN_LEFT, 0);
@@ -180,6 +213,30 @@ static lv_obj_t *page_playback_create(lv_obj_t *parent, panel_arr_t *arr) {
     lv_obj_set_pos(label, 10, 700);
     status = create_msgbox_item("Status", "None");
     lv_obj_add_flag(status, LV_OBJ_FLAG_HIDDEN);
+
+    // Long-press action menu: a small centered panel with up to 3 rows,
+    // styled like the status box. Text and row count are (re)built per
+    // clip in action_menu_build(); the highlighted row's text just turns
+    // the accent color, matching the day-history cursor's approach.
+    action_menu_bg = lv_obj_create(lv_scr_act());
+    lv_obj_clear_flag(action_menu_bg, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_width(action_menu_bg, UI_PAGE_MSG_BOX_SIZE);
+    lv_obj_set_height(action_menu_bg, LV_SIZE_CONTENT);
+    lv_obj_center(action_menu_bg);
+    lv_obj_set_style_bg_color(action_menu_bg, lv_color_hex(UI_COLOR_BG_ROOT), 0);
+    lv_obj_set_style_border_width(action_menu_bg, 3, 0);
+    lv_obj_set_style_border_color(action_menu_bg, lv_color_hex(UI_COLOR_ACCENT), 0);
+    lv_obj_set_style_pad_all(action_menu_bg, 20, 0);
+    lv_obj_add_flag(action_menu_bg, LV_OBJ_FLAG_HIDDEN);
+
+    for (int i = 0; i < PB_ACTION_MAX_ROWS; i++) {
+        action_menu_row[i] = lv_label_create(action_menu_bg);
+        lv_obj_set_style_text_font(action_menu_row[i], UI_PAGE_TEXT_FONT, 0);
+        lv_obj_set_style_text_color(action_menu_row[i], lv_color_hex(TEXT_COLOR_DEFAULT), 0);
+        lv_obj_align(action_menu_row[i], LV_ALIGN_TOP_LEFT, 0, i * 50);
+        lv_obj_add_flag(action_menu_row[i], LV_OBJ_FLAG_HIDDEN);
+    }
+
     return page;
 }
 
@@ -599,6 +656,194 @@ static void mark_video_file(int const seq) {
     update_page();
 }
 
+// Moves a favourited clip (and its companions) back out of REC_favDIR into
+// the main clip folder -- the inverse of mark_video_file().
+static void unmark_video_file(int const seq) {
+    media_file_node_t const *const pnode = get_list(seq);
+    if (!pnode || !pnode->favorite) {
+        return;
+    }
+
+    char favdir[300];
+    snprintf(favdir, sizeof(favdir), "%s" REC_favDIR, MEDIA_FILES_DIR);
+
+    char dst[512];
+    snprintf(dst, sizeof(dst), "%s%s", MEDIA_FILES_DIR, pnode->filename);
+    if (fs_file_exists(dst)) {
+        // Name collision -- refuse rather than silently overwriting.
+        LOGE("unmark_video_file: %s already exists, skipping", dst);
+        return;
+    }
+
+    char cmd[512];
+    snprintf(cmd, sizeof(cmd), "mv %s%s %s", favdir, pnode->filename, MEDIA_FILES_DIR);
+    system_exec(cmd);
+    snprintf(cmd, sizeof(cmd), "mv %s%s." REC_packJPG " %s 2>/dev/null", favdir, pnode->label, MEDIA_FILES_DIR);
+    system_exec(cmd);
+    snprintf(cmd, sizeof(cmd), "mv %s%s" REC_starSUFFIX " %s 2>/dev/null", favdir, pnode->filename, MEDIA_FILES_DIR);
+    system_exec(cmd);
+
+    walk_sdcard();
+    media_db.cur_sel = constrain(seq, 0, (media_db.count - 1));
+    update_page();
+}
+
+static void toggle_favorite(int const seq) {
+    media_file_node_t const *const pnode = get_list(seq);
+    if (!pnode)
+        return;
+    if (pnode->favorite)
+        unmark_video_file(seq);
+    else
+        mark_video_file(seq);
+}
+
+// Runs the ts2mp4 helper out of process (this process has no ffmpeg linked)
+// and waits for it, bounded, polling a result file -- same defensive pattern
+// as the SD format/repair flows in page_storage.c. Deletes the source .ts
+// only once the .mp4 is confirmed written; on any failure the source is left
+// untouched and any partial .mp4 is removed.
+static void *convert_thread(void *arg) {
+    (void)arg;
+    const char *results_file = "/tmp/ts2mp4.result";
+    unlink(results_file);
+
+    char cmd[1400];
+    snprintf(cmd, sizeof(cmd),
+             "LD_LIBRARY_PATH=/lib/libffmpeg:/lib/eyesee-mpp "
+             "/mnt/app/app/record/ts2mp4 \"%s\" \"%s\" > /tmp/ts2mp4.log 2>&1; echo $? > %s &",
+             convert_ts_path, convert_mp4_path, results_file);
+    system_exec(cmd);
+
+    int elapsed = 0;
+    while (!fs_file_exists(results_file) && ++elapsed < 300) {
+        sleep(1);
+    }
+
+    bool ok = false;
+    FILE *f = fopen(results_file, "r");
+    if (f) {
+        int code = -1;
+        if (fscanf(f, "%d", &code) == 1)
+            ok = (code == 0);
+        fclose(f);
+    }
+    ok = ok && fs_file_exists(convert_mp4_path) && fs_filesize(convert_mp4_path) > 0;
+
+    if (ok) {
+        char rm_cmd[600];
+        snprintf(rm_cmd, sizeof(rm_cmd), "rm \"%s\"", convert_ts_path);
+        system_exec(rm_cmd);
+    } else {
+        unlink(convert_mp4_path); // don't leave a partial/broken file behind
+    }
+
+    pthread_mutex_lock(&lvgl_mutex);
+    walk_sdcard();
+    update_page();
+    page_playback_open_status_box(ok ? "Converted" : "Conversion failed",
+                                   ok ? "Saved as .mp4." : "Could not convert this clip.\nSee /tmp/ts2mp4.log on the SD card.");
+    status_deleting = true; // dismissible via RIGHT_KEY_CLICK/PRESS
+    status_is_delete_confirm = false;
+    pthread_mutex_unlock(&lvgl_mutex);
+
+    convert_running = false;
+    return NULL;
+}
+
+static void start_convert(int const seq) {
+    media_file_node_t const *const pnode = get_list(seq);
+    if (!pnode || convert_running || strcasecmp(pnode->ext, REC_packTS) != 0)
+        return;
+
+    char dir[300];
+    node_dir(pnode, dir, sizeof(dir));
+
+    char mp4_path[512];
+    snprintf(mp4_path, sizeof(mp4_path), "%s%s.%s", dir, pnode->label, REC_packMP4);
+    if (fs_file_exists(mp4_path)) {
+        page_playback_open_status_box("Convert to MP4", "An .mp4 with this name already exists.");
+        status_deleting = true;
+        status_is_delete_confirm = false;
+        return;
+    }
+
+    snprintf(convert_ts_path, sizeof(convert_ts_path), "%s%s", dir, pnode->filename);
+    snprintf(convert_mp4_path, sizeof(convert_mp4_path), "%s", mp4_path);
+
+    page_playback_open_status_box("Converting to MP4", "This can take a while for large clips.");
+    status_deleting = true;
+    status_is_delete_confirm = false;
+
+    convert_running = true;
+    pthread_t tid;
+    if (pthread_create(&tid, NULL, convert_thread, NULL) == 0) {
+        pthread_detach(tid);
+    } else {
+        LOGE("start_convert: pthread_create failed");
+        convert_running = false;
+        status_deleting = page_playback_close_status_box();
+    }
+}
+
+// Builds the visible rows for the clip at `seq`: Favorite (toggle label),
+// Convert to MP4 (only for .ts clips), Remove -- in that order.
+static void action_menu_build(int seq) {
+    media_file_node_t const *const pnode = get_list(seq);
+    action_menu_row_count = 0;
+    if (!pnode)
+        return;
+
+    action_menu_action[action_menu_row_count++] = PB_ACTION_FAVORITE;
+    if (strcasecmp(pnode->ext, REC_packTS) == 0)
+        action_menu_action[action_menu_row_count++] = PB_ACTION_CONVERT;
+    action_menu_action[action_menu_row_count++] = PB_ACTION_REMOVE;
+
+    for (int i = 0; i < PB_ACTION_MAX_ROWS; i++) {
+        if (i >= action_menu_row_count) {
+            lv_obj_add_flag(action_menu_row[i], LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+
+        const char *text;
+        switch (action_menu_action[i]) {
+        case PB_ACTION_FAVORITE:
+            text = pnode->favorite ? _lang("Remove from Favorites") : _lang("Add to Favorites");
+            break;
+        case PB_ACTION_CONVERT:
+            text = _lang("Convert to MP4");
+            break;
+        default:
+            text = _lang("Remove");
+            break;
+        }
+        lv_label_set_text(action_menu_row[i], text);
+        lv_obj_clear_flag(action_menu_row[i], LV_OBJ_FLAG_HIDDEN);
+    }
+}
+
+static void action_menu_update_highlight(void) {
+    for (int i = 0; i < action_menu_row_count; i++) {
+        lv_obj_set_style_text_color(action_menu_row[i],
+                                     lv_color_hex(i == action_menu_sel ? UI_COLOR_ACCENT : TEXT_COLOR_DEFAULT), 0);
+    }
+}
+
+static void action_menu_open_for(int seq) {
+    action_menu_build(seq);
+    if (action_menu_row_count == 0)
+        return;
+    action_menu_sel = 0;
+    action_menu_update_highlight();
+    action_menu_open = true;
+    lv_obj_clear_flag(action_menu_bg, LV_OBJ_FLAG_HIDDEN);
+}
+
+static void action_menu_close(void) {
+    action_menu_open = false;
+    lv_obj_add_flag(action_menu_bg, LV_OBJ_FLAG_HIDDEN);
+}
+
 static void delete_video_file(int seq) {
     media_file_node_t const *const pnode = get_list(seq);
     if (!pnode) {
@@ -641,7 +886,6 @@ static void page_playback_enter() {
 void pb_key(uint8_t const key) {
     static bool done = true;
     static uint8_t state = 0; // 0= select video files, 1=playback
-    static bool status_deleting = false;
     char fname[128];
     uint32_t cur_page_num, lst_page_num;
     uint8_t cur_pos, lst_pos;
@@ -657,7 +901,50 @@ void pb_key(uint8_t const key) {
     if (!key || !media_db.count || (!done && status_displayed && !status_deleting)) {
         return;
     }
-    char text[128];
+
+    if (action_menu_open) {
+        switch (key) {
+        case DIAL_KEY_UP:
+            action_menu_sel = (action_menu_sel + 1) % action_menu_row_count;
+            action_menu_update_highlight();
+            break;
+
+        case DIAL_KEY_DOWN:
+            action_menu_sel = (action_menu_sel + action_menu_row_count - 1) % action_menu_row_count;
+            action_menu_update_highlight();
+            break;
+
+        case DIAL_KEY_CLICK: {
+            pb_action_t const action = action_menu_action[action_menu_sel];
+            action_menu_close();
+            switch (action) {
+            case PB_ACTION_FAVORITE:
+                toggle_favorite(media_db.cur_sel);
+                break;
+            case PB_ACTION_CONVERT:
+                start_convert(media_db.cur_sel);
+                break;
+            case PB_ACTION_REMOVE:
+                page_playback_open_status_box("Are you sure you want to DELETE the file",
+                                               "Click center of dial to continue.\nClick function(right button) or scroll to exit.");
+                status_deleting = true;
+                status_is_delete_confirm = true;
+                break;
+            }
+            break;
+        }
+
+        case DIAL_KEY_PRESS:
+        case RIGHT_KEY_CLICK:
+            action_menu_close();
+            break;
+
+        default:
+            break;
+        }
+        return;
+    }
+
     done = false;
     switch (key) {
     case DIAL_KEY_UP: // up
@@ -712,8 +999,10 @@ void pb_key(uint8_t const key) {
 
     case DIAL_KEY_CLICK: // Enter
         if (status_displayed) {
-            delete_video_file(media_db.cur_sel);
+            if (status_is_delete_confirm)
+                delete_video_file(media_db.cur_sel);
             status_deleting = page_playback_close_status_box();
+            status_is_delete_confirm = false;
         } else if (get_seleteced(media_db.cur_sel, fname)) {
             mplayer_file(fname);
             state = 1;
@@ -729,21 +1018,20 @@ void pb_key(uint8_t const key) {
     case RIGHT_KEY_CLICK:
         if (status_displayed) {
             status_deleting = page_playback_close_status_box();
+            status_is_delete_confirm = false;
         } else {
-            mark_video_file(media_db.cur_sel);
+            toggle_favorite(media_db.cur_sel);
         }
         break;
 
     case RIGHT_KEY_PRESS:
-        if (!status_displayed) {
-            snprintf(text, sizeof(text), "%s", "Click center of dial to continue.\nClick function(right button) or scroll to exit.");
-            page_playback_open_status_box("Are you sure you want to DELETE the file", text);
-            status_deleting = true;
-        } else {
+        if (status_displayed) {
             page_playback_close_status_box();
+            status_is_delete_confirm = false;
+        } else if (!convert_running) {
+            action_menu_open_for(media_db.cur_sel);
         }
         break;
-        done = true;
     }
 }
 static void page_playback_on_roller(uint8_t key) {
