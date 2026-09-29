@@ -16,6 +16,8 @@ extern "C" {
 
 #define ITEM_GAP_W 30
 #define ITEM_GAP_H 50
+
+#define MP4_BADGE_SIZE 16
 #define PB_X_START 0
 #define PB_Y_START 0
 
@@ -64,6 +66,7 @@ typedef struct {
     lv_obj_t *_label;
     lv_obj_t *_arrow;
     lv_obj_t *_star;
+    lv_obj_t *_mp4_badge; // green dot, bottom-right of the thumbnail, shown for .mp4 clips
     uint16_t x;
     uint16_t y;
     uint8_t state; // 0: invisible; 1=highlighted; 2= normal

@@ -6,8 +6,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <utime.h>
 
 #include <log/log.h>
 
@@ -16,6 +18,7 @@
 #include "common.hh"
 #include "core/app_state.h"
 #include "core/osd.h"
+#include "driver/beep.h"
 #include "lang/language.h"
 #include "record/record_definitions.h"
 #include "ui/page_common.h"
@@ -68,13 +71,14 @@ static bool status_deleting = false;
 static bool status_is_delete_confirm = false;
 
 // Long-press action menu (RIGHT_KEY_PRESS on a clip): Favorite / Convert to
-// MP4 (only for .ts clips) / Remove.
+// MP4 (only for .ts clips) / Remove / Info.
 typedef enum {
     PB_ACTION_FAVORITE,
     PB_ACTION_CONVERT,
     PB_ACTION_REMOVE,
+    PB_ACTION_INFO,
 } pb_action_t;
-#define PB_ACTION_MAX_ROWS 3
+#define PB_ACTION_MAX_ROWS 4
 static lv_obj_t *action_menu_bg;
 static lv_obj_t *action_menu_row[PB_ACTION_MAX_ROWS];
 static pb_action_t action_menu_action[PB_ACTION_MAX_ROWS];
@@ -89,6 +93,7 @@ static bool action_menu_open;
 static bool convert_running;
 static char convert_ts_path[512];
 static char convert_mp4_path[512];
+static lv_obj_t *convert_progress_bar;
 
 /**
  * Displays the status message box.
@@ -155,6 +160,17 @@ static lv_obj_t *page_playback_create(lv_obj_t *parent, panel_arr_t *arr) {
         lv_img_set_src(pb_ui[pos]._star, &img_star);
         lv_obj_add_flag(pb_ui[pos]._star, LV_OBJ_FLAG_HIDDEN);
 
+        // .mp4 badge: a plain green dot (no icon asset for this), bottom-right
+        // corner of the thumbnail.
+        pb_ui[pos]._mp4_badge = lv_obj_create(cont);
+        lv_obj_clear_flag(pb_ui[pos]._mp4_badge, LV_OBJ_FLAG_SCROLLABLE);
+        lv_obj_set_size(pb_ui[pos]._mp4_badge, MP4_BADGE_SIZE, MP4_BADGE_SIZE);
+        lv_obj_set_style_radius(pb_ui[pos]._mp4_badge, LV_RADIUS_CIRCLE, 0);
+        lv_obj_set_style_bg_color(pb_ui[pos]._mp4_badge, lv_color_hex(0x2ECC40), 0); // green
+        lv_obj_set_style_bg_opa(pb_ui[pos]._mp4_badge, LV_OPA_COVER, 0);
+        lv_obj_set_style_border_width(pb_ui[pos]._mp4_badge, 0, 0);
+        lv_obj_add_flag(pb_ui[pos]._mp4_badge, LV_OBJ_FLAG_HIDDEN);
+
         pb_ui[pos]._label = lv_label_create(cont);
         lv_obj_set_style_text_font(pb_ui[pos]._label, UI_PAGE_TEXT_FONT, 0);
         lv_obj_set_style_text_color(pb_ui[pos]._label, lv_color_hex(TEXT_COLOR_DEFAULT), 0);
@@ -175,6 +191,9 @@ static lv_obj_t *page_playback_create(lv_obj_t *parent, panel_arr_t *arr) {
                        pb_ui[pos].y + UI_PAGE_PLAYBACK_ITEM_PREVIEW_H + 10);
 
         lv_obj_set_pos(pb_ui[pos]._star, pb_ui[pos].x + 5, pb_ui[pos].y);
+
+        lv_obj_set_pos(pb_ui[pos]._mp4_badge, pb_ui[pos].x + UI_PAGE_PLAYBACK_ITEM_PREVIEW_W - MP4_BADGE_SIZE - 5,
+                       pb_ui[pos].y + UI_PAGE_PLAYBACK_ITEM_PREVIEW_H - MP4_BADGE_SIZE - 5);
 
         lv_obj_set_pos(pb_ui[pos]._label, pb_ui[pos].x + (UI_PAGE_PLAYBACK_ITEM_PREVIEW_W >> 2) + ITEM_GAP_W,
                        pb_ui[pos].y + UI_PAGE_PLAYBACK_ITEM_PREVIEW_H + 10);
@@ -213,6 +232,13 @@ static lv_obj_t *page_playback_create(lv_obj_t *parent, panel_arr_t *arr) {
     lv_obj_set_pos(label, 10, 700);
     status = create_msgbox_item("Status", "None");
     lv_obj_add_flag(status, LV_OBJ_FLAG_HIDDEN);
+    // The msgbox's own content area (lv_msgbox_get_content()) has no layout
+    // of its own -- only the outer msgbox does -- so the text label and (a
+    // few lines down) the conversion progress bar would otherwise both sit
+    // at (0,0) inside it and overlap. Column flex stacks them and keeps
+    // content's LV_SIZE_CONTENT height correct for whichever of them (just
+    // the label, or the label + the bar) is actually visible.
+    lv_obj_set_flex_flow(lv_msgbox_get_content(status), LV_FLEX_FLOW_COLUMN);
 
     // Long-press action menu: a small centered panel with up to 3 rows,
     // styled like the status box. Text and row count are (re)built per
@@ -247,16 +273,29 @@ static lv_obj_t *page_playback_create(lv_obj_t *parent, panel_arr_t *arr) {
         lv_obj_add_flag(action_menu_row[i], LV_OBJ_FLAG_HIDDEN);
     }
 
+    // Conversion progress bar: a real child of the status box's own content
+    // area (not a floating widget positioned relative to it) so it's inside
+    // the box's border and the box's flex layout -- already proven to
+    // resize correctly for varying text, unlike the action menu's hand-rolled
+    // absolute positioning -- grows to fit it automatically.
+    convert_progress_bar = lv_bar_create(lv_msgbox_get_content(status));
+    lv_obj_set_size(convert_progress_bar, UI_VERSION_PROGRESS_BAR_SIZE);
+    lv_obj_set_width(convert_progress_bar, lv_pct(90)); // content is column flex now, so this is just sizing, not row-forcing
+    lv_bar_set_range(convert_progress_bar, 0, 100);
+    lv_bar_set_value(convert_progress_bar, 0, LV_ANIM_OFF);
+    lv_obj_add_flag(convert_progress_bar, LV_OBJ_FLAG_HIDDEN);
+
     return page;
 }
 
-static void show_pb_item(uint8_t pos, char *label, bool star) {
+static void show_pb_item(uint8_t pos, char *label, bool star, bool is_mp4) {
     char fname[256];
     if (pb_ui[pos].state == ITEM_STATE_INVISIBLE) {
         lv_obj_add_flag(pb_ui[pos]._img, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(pb_ui[pos]._label, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(pb_ui[pos]._arrow, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(pb_ui[pos]._star, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_add_flag(pb_ui[pos]._mp4_badge, LV_OBJ_FLAG_HIDDEN);
         return;
     }
 
@@ -289,6 +328,12 @@ static void show_pb_item(uint8_t pos, char *label, bool star) {
         lv_obj_clear_flag(pb_ui[pos]._star, LV_OBJ_FLAG_HIDDEN);
     } else {
         lv_obj_add_flag(pb_ui[pos]._star, LV_OBJ_FLAG_HIDDEN);
+    }
+
+    if (is_mp4) {
+        lv_obj_clear_flag(pb_ui[pos]._mp4_badge, LV_OBJ_FLAG_HIDDEN);
+    } else {
+        lv_obj_add_flag(pb_ui[pos]._mp4_badge, LV_OBJ_FLAG_HIDDEN);
     }
 
     lv_obj_clear_flag(pb_ui[pos]._img, LV_OBJ_FLAG_HIDDEN);
@@ -602,10 +647,10 @@ static void update_page() {
             // Favourites no longer carry a visible hot_ prefix in the label
             // (they live in their own folder instead), so reuse the star
             // icon to keep them distinguishable in the grid.
-            show_pb_item(i, pnode->label, pnode->star || pnode->favorite);
+            show_pb_item(i, pnode->label, pnode->star || pnode->favorite, strcasecmp(pnode->ext, REC_packMP4) == 0);
         } else {
             pb_ui[i].state = ITEM_STATE_INVISIBLE;
-            show_pb_item(i, NULL, false);
+            show_pb_item(i, NULL, false, false);
         }
     }
 
@@ -708,12 +753,24 @@ static void toggle_favorite(int const seq) {
         mark_video_file(seq);
 }
 
-// The helper binary and, deliberately, its log + result file -- on the SD
-// card (not /tmp, which is on internal storage the SD card doesn't expose)
-// so a failure can actually be diagnosed by pulling the card.
-#define TS2MP4_BIN         "/mnt/app/app/record/ts2mp4"
-#define TS2MP4_LOG_FILE    REC_diskPATH "/ts2mp4.log"
-#define TS2MP4_RESULT_FILE REC_diskPATH "/ts2mp4.result"
+// The helper binary and, deliberately, its log + result + progress files --
+// on the SD card (not /tmp, which is on internal storage the SD card
+// doesn't expose) so a failure can actually be diagnosed by pulling the card.
+#define TS2MP4_BIN           "/mnt/app/app/record/ts2mp4"
+#define TS2MP4_LOG_FILE      REC_diskPATH "/ts2mp4.log"
+#define TS2MP4_RESULT_FILE   REC_diskPATH "/ts2mp4.result"
+#define TS2MP4_PROGRESS_FILE REC_diskPATH "/ts2mp4.progress"
+
+// Three short beeps, evenly spaced -- beep_dur() just signals a single-slot
+// beeper thread (see driver/beep.c), so calling it back-to-back without a
+// gap would just overwrite the pending beep instead of queuing three.
+static void beep_triple(void) {
+    for (int i = 0; i < 3; i++) {
+        beep();
+        if (i < 2)
+            usleep(150000);
+    }
+}
 
 // Runs the ts2mp4 helper out of process (this process has no ffmpeg linked)
 // and waits for it, bounded, polling a result file -- same defensive pattern
@@ -723,6 +780,14 @@ static void toggle_favorite(int const seq) {
 static void *convert_thread(void *arg) {
     (void)arg;
     unlink(TS2MP4_RESULT_FILE);
+    unlink(TS2MP4_PROGRESS_FILE);
+
+    // Grab the source clip's timestamps before it's converted (and, on
+    // success, deleted) -- a freshly-written .mp4 would otherwise carry
+    // today's date instead of when the clip was actually recorded, throwing
+    // off the recency sort on this page.
+    struct stat src_st;
+    bool const have_src_stat = (stat(convert_ts_path, &src_st) == 0);
 
     // Wrapped in a subshell so the WHOLE sequence backgrounds -- "a; b &"
     // only backgrounds b, which would leave system_exec() blocking on the
@@ -730,12 +795,24 @@ static void *convert_thread(void *arg) {
     // but it defeats the point of the bounded poll below).
     char cmd[1400];
     snprintf(cmd, sizeof(cmd),
-             "( LD_LIBRARY_PATH=/lib/libffmpeg:/lib/eyesee-mpp %s \"%s\" \"%s\" > %s 2>&1; echo $? > %s ) &",
-             TS2MP4_BIN, convert_ts_path, convert_mp4_path, TS2MP4_LOG_FILE, TS2MP4_RESULT_FILE);
+             "( LD_LIBRARY_PATH=/lib/libffmpeg:/lib/eyesee-mpp %s \"%s\" \"%s\" \"%s\" > %s 2>&1; echo $? > %s ) &",
+             TS2MP4_BIN, convert_ts_path, convert_mp4_path, TS2MP4_PROGRESS_FILE, TS2MP4_LOG_FILE, TS2MP4_RESULT_FILE);
     system_exec(cmd);
 
     int elapsed = 0;
     while (!fs_file_exists(TS2MP4_RESULT_FILE) && ++elapsed < 300) {
+        int percent = -1;
+        FILE *pf = fopen(TS2MP4_PROGRESS_FILE, "r");
+        if (pf) {
+            if (fscanf(pf, "%d", &percent) != 1)
+                percent = -1;
+            fclose(pf);
+        }
+        if (percent >= 0) {
+            pthread_mutex_lock(&lvgl_mutex);
+            lv_bar_set_value(convert_progress_bar, constrain(percent, 0, 100), LV_ANIM_OFF);
+            pthread_mutex_unlock(&lvgl_mutex);
+        }
         sleep(1);
     }
 
@@ -749,6 +826,11 @@ static void *convert_thread(void *arg) {
     }
     ok = ok && fs_file_exists(convert_mp4_path) && fs_filesize(convert_mp4_path) > 0;
 
+    if (ok && have_src_stat) {
+        struct utimbuf times = {.actime = src_st.st_atime, .modtime = src_st.st_mtime};
+        utime(convert_mp4_path, &times);
+    }
+
     if (ok) {
         char rm_cmd[600];
         snprintf(rm_cmd, sizeof(rm_cmd), "rm \"%s\"", convert_ts_path);
@@ -757,8 +839,24 @@ static void *convert_thread(void *arg) {
         unlink(convert_mp4_path); // don't leave a partial/broken file behind
     }
 
+    beep_triple();
+
     pthread_mutex_lock(&lvgl_mutex);
-    walk_sdcard();
+    lv_obj_add_flag(convert_progress_bar, LV_OBJ_FLAG_HIDDEN);
+    walk_sdcard(); // resets cur_sel to 0 (most recent) -- re-find the converted clip below instead
+    if (ok) {
+        char dir[300];
+        for (int seq = 0; seq < media_db.count; seq++) {
+            media_file_node_t const *const n = get_list(seq);
+            node_dir(n, dir, sizeof(dir));
+            char full[560];
+            snprintf(full, sizeof(full), "%s%s", dir, n->filename);
+            if (strcmp(full, convert_mp4_path) == 0) {
+                media_db.cur_sel = seq;
+                break;
+            }
+        }
+    }
     update_page();
     page_playback_open_status_box(ok ? "Converted" : "Conversion failed",
                                    ok ? "Saved as .mp4." : "Could not convert this clip.\nSee ts2mp4.log at the SD card root.");
@@ -800,6 +898,8 @@ static void start_convert(int const seq) {
     page_playback_open_status_box("Converting to MP4", "This can take a while for large clips.");
     status_deleting = true;
     status_is_delete_confirm = false;
+    lv_bar_set_value(convert_progress_bar, 0, LV_ANIM_OFF);
+    lv_obj_clear_flag(convert_progress_bar, LV_OBJ_FLAG_HIDDEN);
 
     convert_running = true;
     pthread_t tid;
@@ -808,12 +908,118 @@ static void start_convert(int const seq) {
     } else {
         LOGE("start_convert: pthread_create failed");
         convert_running = false;
+        lv_obj_add_flag(convert_progress_bar, LV_OBJ_FLAG_HIDDEN);
+        status_deleting = page_playback_close_status_box();
+    }
+}
+
+#define TS2MP4_INFO_FILE        REC_diskPATH "/ts2mp4.info"
+#define TS2MP4_INFO_RESULT_FILE REC_diskPATH "/ts2mp4.info.result"
+
+// Matches ts2mp4/main.c's DVR_VIDEO_WIDTH/HEIGHT (a separate process/binary,
+// so not literally shared) -- every DVR clip is this fixed resolution.
+#define INFO_VIDEO_WIDTH  1280
+#define INFO_VIDEO_HEIGHT 720
+
+// Date/size/extension come straight from what walk_sdcard() already scanned
+// (media_file_node_t); duration and fps don't (they're not read off the
+// filesystem), so those two go through a quick ts2mp4 --info probe -- same
+// out-of-process pattern as the conversion, but read-only, no muxing.
+// Resolution isn't probed either: every DVR clip is a fixed resolution
+// (INFO_VIDEO_WIDTH/HEIGHT), so it's just stated directly.
+static bool info_running;
+static char info_ts_path[512];
+static char info_date_str[32];
+static char info_ext_str[16];
+static int info_size_mb;
+
+static void *info_thread(void *arg) {
+    (void)arg;
+    unlink(TS2MP4_INFO_RESULT_FILE);
+    unlink(TS2MP4_INFO_FILE);
+
+    char cmd[1200];
+    snprintf(cmd, sizeof(cmd),
+             "( LD_LIBRARY_PATH=/lib/libffmpeg:/lib/eyesee-mpp %s --info \"%s\" \"%s\" > %s 2>&1; echo $? > %s ) &",
+             TS2MP4_BIN, info_ts_path, TS2MP4_INFO_FILE, TS2MP4_LOG_FILE, TS2MP4_INFO_RESULT_FILE);
+    system_exec(cmd);
+
+    int elapsed = 0;
+    while (!fs_file_exists(TS2MP4_INFO_RESULT_FILE) && ++elapsed < 30) {
+        sleep(1);
+    }
+
+    int duration_ms = -1, fps = -1;
+    FILE *f = fopen(TS2MP4_INFO_FILE, "r");
+    if (f) {
+        char line[64];
+        while (fgets(line, sizeof(line), f)) {
+            sscanf(line, "duration_ms=%d", &duration_ms);
+            sscanf(line, "fps=%d", &fps);
+        }
+        fclose(f);
+    }
+
+    char dur_buf[16];
+    if (duration_ms >= 0)
+        snprintf(dur_buf, sizeof(dur_buf), "%02d:%02d", (duration_ms / 1000) / 60, (duration_ms / 1000) % 60);
+    else
+        snprintf(dur_buf, sizeof(dur_buf), "?");
+
+    char fps_buf[8];
+    if (fps > 0)
+        snprintf(fps_buf, sizeof(fps_buf), "%d", fps);
+    else
+        snprintf(fps_buf, sizeof(fps_buf), "?");
+
+    char text[320];
+    snprintf(text, sizeof(text),
+             "Date: %s\nDuration: %s\nSize: %d MB\nFPS: %s\nResolution: %dx%d\nFormat: .%s",
+             info_date_str, dur_buf, info_size_mb, fps_buf, INFO_VIDEO_WIDTH, INFO_VIDEO_HEIGHT, info_ext_str);
+
+    pthread_mutex_lock(&lvgl_mutex);
+    page_playback_open_status_box("Info", text);
+    status_deleting = true; // dismissible via RIGHT_KEY_CLICK/PRESS (and any roller turn, see DIAL_KEY_UP/DOWN)
+    status_is_delete_confirm = false;
+    pthread_mutex_unlock(&lvgl_mutex);
+
+    info_running = false;
+    return NULL;
+}
+
+static void start_info(int const seq) {
+    media_file_node_t const *const pnode = get_list(seq);
+    if (!pnode || info_running || convert_running)
+        return;
+
+    char dir[300];
+    node_dir(pnode, dir, sizeof(dir));
+    snprintf(info_ts_path, sizeof(info_ts_path), "%s%s", dir, pnode->filename);
+    snprintf(info_ext_str, sizeof(info_ext_str), "%s", pnode->ext);
+    info_size_mb = pnode->size;
+
+    struct tm tmv;
+    localtime_r(&pnode->mtime, &tmv);
+    snprintf(info_date_str, sizeof(info_date_str), "%02d-%02d-%02d %02d:%02d",
+             tmv.tm_mday, tmv.tm_mon + 1, tmv.tm_year % 100, tmv.tm_hour, tmv.tm_min);
+
+    page_playback_open_status_box("Info", "Reading clip info...");
+    status_deleting = true;
+    status_is_delete_confirm = false;
+
+    info_running = true;
+    pthread_t tid;
+    if (pthread_create(&tid, NULL, info_thread, NULL) == 0) {
+        pthread_detach(tid);
+    } else {
+        LOGE("start_info: pthread_create failed");
+        info_running = false;
         status_deleting = page_playback_close_status_box();
     }
 }
 
 // Builds the visible rows for the clip at `seq`: Favorite (toggle label),
-// Convert to MP4 (only for .ts clips), Remove -- in that order.
+// Convert to MP4 (only for .ts clips), Remove, Info -- in that order.
 static void action_menu_build(int seq) {
     media_file_node_t const *const pnode = get_list(seq);
     action_menu_row_count = 0;
@@ -824,6 +1030,7 @@ static void action_menu_build(int seq) {
     if (strcasecmp(pnode->ext, REC_packTS) == 0)
         action_menu_action[action_menu_row_count++] = PB_ACTION_CONVERT;
     action_menu_action[action_menu_row_count++] = PB_ACTION_REMOVE;
+    action_menu_action[action_menu_row_count++] = PB_ACTION_INFO;
 
     for (int i = 0; i < PB_ACTION_MAX_ROWS; i++) {
         if (i >= action_menu_row_count) {
@@ -839,8 +1046,11 @@ static void action_menu_build(int seq) {
         case PB_ACTION_CONVERT:
             text = _lang("Convert to MP4");
             break;
-        default:
+        case PB_ACTION_REMOVE:
             text = _lang("Remove");
+            break;
+        default: // PB_ACTION_INFO
+            text = _lang("Info");
             break;
         }
         lv_label_set_text(action_menu_row[i], text);
@@ -894,7 +1104,22 @@ static void delete_video_file(int seq) {
     }
 }
 
+// Absorbs the back gesture (physical dial long-press) while the action menu
+// is open: btn_press() (input_device.c) routes a long-press straight to
+// submenu_back() for APP_STATE_SUBMENU, bypassing pb_key()/its own
+// DIAL_KEY_PRESS handling entirely -- so without this, long-pressing while
+// the menu was open exited Playback with the menu panel left stuck on
+// screen (action_menu_open never reset, action_menu_bg never re-hidden).
+static bool page_playback_on_back(void) {
+    if (action_menu_open) {
+        action_menu_close();
+        return true; // stay on the page
+    }
+    return false; // fall through to the normal exit
+}
+
 static void page_playback_exit() {
+    action_menu_close(); // defensive: don't leave the menu panel stuck on screen
     page_playback_close_status_box();
     clear_videofile_cnt();
     update_page();
@@ -956,6 +1181,9 @@ void pb_key(uint8_t const key) {
                                                "Click center of dial to continue.\nClick function(right button) or scroll to exit.");
                 status_deleting = true;
                 status_is_delete_confirm = true;
+                break;
+            case PB_ACTION_INFO:
+                start_info(media_db.cur_sel);
                 break;
             }
             break;
@@ -1055,7 +1283,7 @@ void pb_key(uint8_t const key) {
         if (status_displayed) {
             page_playback_close_status_box();
             status_is_delete_confirm = false;
-        } else if (!convert_running) {
+        } else if (!convert_running && !info_running) {
             action_menu_open_for(media_db.cur_sel);
         }
         break;
@@ -1074,6 +1302,7 @@ page_pack_t pp_playback = {
     .create = page_playback_create,
     .enter = page_playback_enter,
     .exit = page_playback_exit,
+    .on_back = page_playback_on_back,
     .on_created = NULL,
     .on_update = NULL,
     .on_roller = page_playback_on_roller,

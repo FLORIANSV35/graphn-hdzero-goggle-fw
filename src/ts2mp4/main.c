@@ -7,11 +7,18 @@
 // codec parameters as-is and let the mp4 muxer reformat the H.264/H.265
 // Annex-B packets from the .ts into the length-prefixed form mp4 needs.
 //
-// usage: ts2mp4 <input.ts> <output.mp4>
-// exit 0 on success, non-zero (with a message on stderr) otherwise.
+// usage: ts2mp4 <input.ts> <output.mp4> [progress-file]
+//        ts2mp4 --info <input.ts> <info-file>
+// exit 0 on success, non-zero (with a message on stderr) otherwise. When
+// given, progress-file is overwritten with a plain "0"-"100" integer
+// (bytes of input read so far, as a percentage) every PROGRESS_PACKET_STEP
+// packets -- the caller polls it to drive a progress bar.
+// --info doesn't mux anything, just probes and writes info-file as
+// "duration_ms=<int>\nfps=<int>\n" (-1 for whichever it couldn't determine).
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
@@ -26,20 +33,105 @@
 #define DVR_AUDIO_RATE     48000
 #define DVR_AUDIO_CHANNELS 2
 
+#define PROGRESS_PACKET_STEP 25 // write the progress file this often, not every packet
+
 static void print_ff_error(const char *prefix, int err) {
     char buf[256];
     av_strerror(err, buf, sizeof(buf));
     fprintf(stderr, "%s: %s\n", prefix, buf);
 }
 
+static void write_progress(const char *progress_path, int percent) {
+    if (!progress_path)
+        return;
+    FILE *f = fopen(progress_path, "w");
+    if (!f)
+        return;
+    fprintf(f, "%d", percent);
+    fclose(f);
+}
+
+// Shared by both modes: open + probe, widening the window past ffmpeg's
+// defaults -- the DVR .ts doesn't repeat SPS/PPS/codec params often enough
+// for the default probe window, so avformat_find_stream_info() was failing
+// to determine width/height/sample rate ("Could not find codec parameters
+// ... unspecified size"), which for the conversion path then made the mp4
+// muxer reject the header ("dimensions not set").
+static int open_and_probe(const char *in_path, AVFormatContext **out_ctx) {
+    AVDictionary *open_opts = NULL;
+    av_dict_set(&open_opts, "probesize", "50000000", 0);       // 50MB (default 5MB)
+    av_dict_set(&open_opts, "analyzeduration", "10000000", 0); // 10s (default ~5s, sometimes reported as 0 for ts)
+
+    int ret = avformat_open_input(out_ctx, in_path, NULL, &open_opts);
+    av_dict_free(&open_opts);
+    if (ret < 0) {
+        print_ff_error("could not open input", ret);
+        return ret;
+    }
+
+    ret = avformat_find_stream_info(*out_ctx, NULL);
+    if (ret < 0) {
+        print_ff_error("could not read stream info", ret);
+        avformat_close_input(out_ctx);
+        return ret;
+    }
+
+    return 0;
+}
+
+// --info: no muxing, just report duration and the video stream's frame rate
+// (both come from the container's own packet timing, not from parsing the
+// codec's own headers, so unlike width/height they're not affected by the
+// SPS-parsing gap open_and_probe() works around above).
+static int run_info_mode(const char *in_path, const char *info_path) {
+    AVFormatContext *ifmt_ctx = NULL;
+    if (open_and_probe(in_path, &ifmt_ctx) < 0)
+        return 1;
+
+    int duration_ms = -1;
+    if (ifmt_ctx->duration > 0)
+        duration_ms = (int)(ifmt_ctx->duration * 1000 / AV_TIME_BASE);
+
+    int fps = -1;
+    for (unsigned i = 0; i < ifmt_ctx->nb_streams; i++) {
+        AVCodecParameters *par = ifmt_ctx->streams[i]->codecpar;
+        if (par->codec_type != AVMEDIA_TYPE_VIDEO)
+            continue;
+        AVRational const fr = ifmt_ctx->streams[i]->avg_frame_rate.num ? ifmt_ctx->streams[i]->avg_frame_rate
+                                                                        : ifmt_ctx->streams[i]->r_frame_rate;
+        if (fr.den > 0)
+            fps = (int)(av_q2d(fr) + 0.5);
+        break;
+    }
+
+    avformat_close_input(&ifmt_ctx);
+
+    FILE *f = fopen(info_path, "w");
+    if (!f) {
+        fprintf(stderr, "could not write info file '%s'\n", info_path);
+        return 1;
+    }
+    fprintf(f, "duration_ms=%d\nfps=%d\n", duration_ms, fps);
+    fclose(f);
+
+    return 0;
+}
+
 int main(int argc, char *argv[]) {
-    if (argc != 3) {
-        fprintf(stderr, "usage: %s <input.ts> <output.mp4>\n", argv[0]);
+    if (argc == 4 && strcmp(argv[1], "--info") == 0) {
+        return run_info_mode(argv[2], argv[3]);
+    }
+
+    if (argc != 3 && argc != 4) {
+        fprintf(stderr, "usage: %s <input.ts> <output.mp4> [progress-file]\n"
+                        "       %s --info <input.ts> <info-file>\n",
+                argv[0], argv[0]);
         return 2;
     }
 
     const char *in_path = argv[1];
     const char *out_path = argv[2];
+    const char *progress_path = (argc == 4) ? argv[3] : NULL;
 
     AVFormatContext *ifmt_ctx = NULL;
     AVFormatContext *ofmt_ctx = NULL;
@@ -47,28 +139,8 @@ int main(int argc, char *argv[]) {
     AVPacket *pkt = NULL;
     int ret = 0;
 
-    // The DVR .ts doesn't repeat SPS/PPS/codec params often enough for the
-    // default probe window, so avformat_find_stream_info() below was failing
-    // to determine width/height/sample rate ("Could not find codec
-    // parameters ... unspecified size"), which then made the mp4 muxer
-    // reject the header ("dimensions not set"). Widen the probe explicitly.
-    AVDictionary *open_opts = NULL;
-    av_dict_set(&open_opts, "probesize", "50000000", 0);      // 50MB (default 5MB)
-    av_dict_set(&open_opts, "analyzeduration", "10000000", 0); // 10s (default ~5s, sometimes reported as 0 for ts)
-
-    ret = avformat_open_input(&ifmt_ctx, in_path, NULL, &open_opts);
-    av_dict_free(&open_opts);
-    if (ret < 0) {
-        print_ff_error("could not open input", ret);
+    if (open_and_probe(in_path, &ifmt_ctx) < 0)
         return 1;
-    }
-
-    ret = avformat_find_stream_info(ifmt_ctx, NULL);
-    if (ret < 0) {
-        print_ff_error("could not read stream info", ret);
-        avformat_close_input(&ifmt_ctx);
-        return 1;
-    }
 
     avformat_alloc_output_context2(&ofmt_ctx, NULL, "mp4", out_path);
     if (!ofmt_ctx) {
@@ -163,7 +235,23 @@ int main(int argc, char *argv[]) {
         goto cleanup;
     }
 
+    // Bytes of input read so far is a reasonable stand-in for progress: this
+    // is a stream copy (no re-encode), so read and write pace roughly track
+    // each other, and the input's size is known upfront -- the output's
+    // final size isn't, until it's done.
+    int64_t const in_size = avio_size(ifmt_ctx->pb);
+    int packet_count = 0;
+
     while (av_read_frame(ifmt_ctx, pkt) >= 0) {
+        packet_count++;
+        if (progress_path && in_size > 0 && (packet_count % PROGRESS_PACKET_STEP) == 0) {
+            int64_t const pos = avio_tell(ifmt_ctx->pb);
+            int percent = (int)(pos * 100 / in_size);
+            if (percent > 99)
+                percent = 99; // 100 is written once muxing actually finishes, below
+            write_progress(progress_path, percent);
+        }
+
         if (pkt->stream_index < 0 || (unsigned)pkt->stream_index >= ifmt_ctx->nb_streams ||
             stream_map[pkt->stream_index] < 0) {
             av_packet_unref(pkt);
@@ -192,6 +280,7 @@ int main(int argc, char *argv[]) {
             ret = trailer_ret;
         } else {
             ret = 0;
+            write_progress(progress_path, 100);
         }
     }
 
