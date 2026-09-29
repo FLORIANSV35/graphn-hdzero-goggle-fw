@@ -15,7 +15,16 @@
 
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
+#include <libavutil/channel_layout.h>
 #include <libavutil/dict.h>
+
+// The DVR always records at this resolution/audio format (record_definitions.h
+// VI_WIDTH/VI_HEIGHT/AI_sampleRATE/AI_CHANNELS on the goggle side) -- used
+// below as a fallback for whatever the demuxer couldn't determine itself.
+#define DVR_VIDEO_WIDTH    1280
+#define DVR_VIDEO_HEIGHT   720
+#define DVR_AUDIO_RATE     48000
+#define DVR_AUDIO_CHANNELS 2
 
 static void print_ff_error(const char *prefix, int err) {
     char buf[256];
@@ -102,6 +111,27 @@ int main(int argc, char *argv[]) {
             goto cleanup;
         }
         out_stream->codecpar->codec_tag = 0; // let the mp4 muxer pick its own tag
+
+        // Even with a wide probe, this demuxer can't reliably pull
+        // width/height (video) or sample rate/channels (audio) out of this
+        // stream's SPS/ADTS headers ("unspecified size" / "unspecified
+        // sample rate" in ffmpeg's own log) -- the mp4 muxer then refuses to
+        // write a header ("dimensions not set"). Fall back to the DVR's
+        // fixed recording format whenever the probe came back empty; leave
+        // it alone if the probe did manage to fill it in.
+        if (out_stream->codecpar->codec_type == AVMEDIA_TYPE_VIDEO) {
+            if (out_stream->codecpar->width <= 0 || out_stream->codecpar->height <= 0) {
+                out_stream->codecpar->width = DVR_VIDEO_WIDTH;
+                out_stream->codecpar->height = DVR_VIDEO_HEIGHT;
+            }
+        } else if (out_stream->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
+            if (out_stream->codecpar->sample_rate <= 0)
+                out_stream->codecpar->sample_rate = DVR_AUDIO_RATE;
+            if (out_stream->codecpar->channels <= 0) {
+                out_stream->codecpar->channels = DVR_AUDIO_CHANNELS;
+                out_stream->codecpar->channel_layout = AV_CH_LAYOUT_STEREO;
+            }
+        }
 
         stream_map[i] = out_index++;
     }
