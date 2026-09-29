@@ -1,0 +1,64 @@
+# Third-party notices
+
+## FPV Frequency Reference Chart (RotorHazard)
+
+The **Frequency Chart** shown in Tools (`mkapp/app/resource/OSD/GOGGLE/freq_chart.png` and its `FHD/`
+variant) is the "Frequency Reference Chart" from the RotorHazard project,
+<https://github.com/RotorHazard/RotorHazard> (`doc/img/Frequency Reference Chart 2024-02-18.png`),
+by Michael Niggel / Hazard Creative, LLC. It was resized to the goggle screen and color-quantized to keep
+the firmware image small, and the RotorHazard and Hazard Creative logos were removed from the bottom-right
+corner (the copyright line and the data credits are kept); the content is otherwise unchanged.
+
+RotorHazard's license, reproduced below as required, is the MIT license with an additional
+non-AI-training condition and a separate reservation on the RotorHazard name and logo.
+
+```text
+RotorHazard is Copyright (c) 2018— Michael Niggel and other contributors.
+
+The RotorHazard name, RotorHazard logo, and other RotorHazard branding elements
+are copyright 2018 Michael Niggel/Hazard Creative, LLC. You may use, copy, 
+publish, or distribute unmodified versions of these works non-commercially with
+unmodified versions of this Project. However, these elements must not be 
+reproduced or distributed with commercial products or with modified versions of
+the project without authorization. Failure to enforce these rights will not be
+construed as waiving them. If use of these elements is desired outside of these
+restrictions, contact michael.niggel@hazardcreative.com.
+
+-----------
+
+MIT NON-AI License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software, related hardware designs, and associated documentation 
+files (the "Project"), to deal in the Project without restriction, including 
+without limitation the rights to use, copy, modify, merge, publish, 
+distribute, sublicense, and/or sell copies of the Project, and to permit
+persons to whom the Project is furnished to do so, subject to the following 
+conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Project.
+
+The Project and any modifications made to it may not be used for the
+purpose of training or improving machine learning algorithms, including but
+not limited to artificial intelligence, natural language processing, or data
+mining. This condition applies to any derivatives, modifications, or updates
+based on the Project code. Any usage of the Project in an AI-training
+dataset is considered a breach of this License.
+
+The Project may not be included in any dataset used for training or
+improving machine learning algorithms, including but not limited to artificial
+intelligence, natural language processing, or data mining.
+
+Any person or organization found to be in violation of these restrictions
+may be subject to legal action and held liable for any damages resulting from
+such use.
+
+THE PROJECT IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF, OR IN CONNECTION WITH THE PROJECT OR THE USE OR OTHER DEALINGS IN
+THE PROJECT.
+```

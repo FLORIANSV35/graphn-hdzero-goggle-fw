@@ -36,7 +36,7 @@ reported, rather than the internal VRX's own channel.
 
 ### Theme system
 
-13 runtime-selectable UI themes (a new "Theme" page in the menu): the original look, plus 12 dark, pill-style
+13 runtime-selectable UI themes (a "Theme" row in the Tools page): the original look, plus 12 dark, pill-style
 palettes (Braise, Ambre, Glace, Ultraviolet, Radar, Magenta, Rouge pur, Bordeaux & or, Citron, Bleu électrique,
 Sarcelle, Monochrome). The selected theme is applied after restarting the goggles.
 
@@ -54,6 +54,46 @@ Sarcelle, Monochrome). The selected theme is applied after restarting the goggle
   favorited under the old renaming scheme are migrated automatically the first time the page loads.
 - A day-history sidebar next to the grid shows a "MM-YY" header per month with the individual days
   underneath, with a cursor tracking whichever clip is currently highlighted.
+- **Long-press the Func (right) button on a clip** to open an action menu: **Favorite / Unfavorite**,
+  **Convert to MP4** (only offered for `.ts` clips), **Remove** and **Info**. The old short-press Func
+  favorite shortcut is gone; use the menu.
+- **Convert to MP4** remuxes the `.ts` into an `.mp4` without re-encoding, so it is fast and lossless. A
+  progress bar shows how far along it is, three beeps signal the end, the converted file keeps the original
+  recording date, and the selection lands on the new clip. The conversion runs in a separate `ts2mp4`
+  process, since ffmpeg is not linked into the main UI binary.
+- **Info** shows the clip's date, duration, size, fps, resolution and extension; turn the wheel to close it.
+- `.mp4` clips get a small green dot at the bottom-right of their thumbnail in the grid.
+
+[![Playback demo: action menu, MP4 conversion and Info](docs/videos/playback-demo.jpg)](docs/videos/playback-demo.mp4)
+
+*Click the picture to watch the demo (mp4, 3 min 47).*
+
+### Tools
+
+One "Tools" page groups small utilities that used to be separate menu entries or didn't exist:
+
+- **Focus Chart**: fullscreen focus test pattern. Click again to dismiss.
+- **Frequency Chart**: fullscreen FPV frequency reference chart, from the
+  [RotorHazard](https://github.com/RotorHazard/RotorHazard) project (Michael Niggel / Hazard Creative, used
+  under its MIT NON-AI license; see [docs/THIRD_PARTY_NOTICES.md](docs/THIRD_PARTY_NOTICES.md)). Click again
+  to dismiss.
+- **RSSI Scanner** (Goggle 2 and Box Pro only): sweeps the built-in analog receiver and plots the RF energy
+  per frequency, so activity shows up even when nothing is a valid HDZero signal. Linear frequency axis,
+  mV scale that auto-ranges from a 640-1200 mV base and widens when a reading falls outside it, and
+  coloured A / B / E / F / R / L channel markers under the axis. Click to close.
+  - **RSSI Scan Width**: Full, Lowband or Standard (E1-E8).
+  - **RSSI Scan Step**: Channels (one point per channel), Coarse 4 MHz or Fine 2 MHz. 2 MHz is the finest
+    step the receiver's synthesizer can do.
+  - The scale is relative: there is no dBm calibration in the firmware.
+  - Not available on the Goggle 1, which has no built-in analog receiver.
+- **Temperature**: live readout of the goggle's temperature probes (the ones behind the fan control). Top,
+  left and right on the Goggle and Goggle 2, a single probe on the Box Pro.
+- **Theme**: cycles the UI theme (see above). Not offered on the Box Pro.
+- **< Back**, like the other pages.
+
+[![Tools demo: charts, RSSI Scanner, temperature and theme](docs/videos/tools-demo.jpg)](docs/videos/tools-demo.mp4)
+
+*Click the picture to watch the demo (mp4, 2 min 12).*
 
 ### Low SD card space alert
 
