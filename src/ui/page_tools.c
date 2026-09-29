@@ -2,41 +2,117 @@
 
 #include <minIni.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "../conf/ui.h"
 
+#include "core/app_state.h"
 #include "core/osd.h"
+#include "core/scan_core.h"
 #include "core/settings.h"
+#include "driver/fans.h"
+#include "driver/hardware.h"
+#include "driver/nct75.h"
+#include "driver/rtc6715.h"
 #include "lang/language.h"
 #include "ui/ui_porting.h"
 #include "ui/ui_style.h"
 #include "ui/ui_theme.h"
 
+// RSSI Scanner sweeps the built-in analog receiver (RTC6715), which only the
+// G2 and Box Pro have: its RSSI pin reports RF energy in the tuned channel
+// whatever the modulation, so it shows any activity even when nothing is a
+// valid HDZero signal. The G1 has no such receiver, so it has no scanner.
+#if defined(HDZBOXPRO) || defined(HDZGOGGLE2)
+#define RSSI_SCAN_ANALOG 1
+#endif
+
 // Tools: a grab bag of one-off utilities that don't warrant their own
 // sidebar entry each -- Focus Chart and Frequency Chart just show a
-// fullscreen reference image, Theme cycles the UI colour theme.
+// fullscreen reference image, RSSI Scanner sweeps every HDZero channel in a
+// loop and charts it, Theme cycles the UI colour theme.
 #define ROW_FOCUS_CHART 0
 #define ROW_FREQ_CHART  1
+#ifdef RSSI_SCAN_ANALOG
+#define ROW_RSSI_SCAN   2
+#define ROW_RSSI_RANGE  3
+#define ROW_RSSI_STEP   4
+#define ROW_TEMPERATURE 5
 #ifndef HDZBOXPRO
-// Box Pro never offered the Theme page either (ui_main_menu.c used to gate
-// it out with #if !defined(HDZBOXPRO)); keep that behaviour here.
-#define ROW_THEME    2
-#define ROW_SWATCHES 3
-#define TOOLS_ROW_COUNT 4
+#define ROW_THEME    6
+#define ROW_SWATCHES 7
+#define ROW_BACK     8
+#define TOOLS_ROW_COUNT 9
 #else
-// submenu_click() treats the last selectable row as an implicit "Back", so
-// a real, clickable row can never be last -- pad with a non-selectable row.
-#define ROW_PAD         2
-#define TOOLS_ROW_COUNT 3
+// Box Pro never offered the Theme page (ui_main_menu.c used to gate it out
+// with #if !defined(HDZBOXPRO)); keep that behaviour here.
+#define ROW_BACK        6
+#define TOOLS_ROW_COUNT 7
+#endif
+#else
+#define ROW_TEMPERATURE 2
+#define ROW_THEME       3
+#define ROW_SWATCHES    4
+#define ROW_BACK        5
+#define TOOLS_ROW_COUNT 6
+#endif
+
+#ifdef RSSI_SCAN_ANALOG
+#define TOOLS_NOTE_ACTIONS \
+    "Click Focus Chart, Frequency Chart or RSSI Scanner to display it fullscreen, click again to dismiss."
+#else
+#define TOOLS_NOTE_ACTIONS "Click Focus Chart or Frequency Chart to display it fullscreen, click again to dismiss."
 #endif
 
 #define SWATCH_COUNT 4
 
+#define RSSI_SCAN_CH_MAX 300 // 48 channels, or up to (5945-5361)/2+1 = 293 points in 2 MHz mode
+
 static lv_coord_t col_dsc[] = {160, 160, 160, 160, 160, 160, LV_GRID_TEMPLATE_LAST};
-static lv_coord_t row_dsc[] = {60, 60, 60, 60, 60, 60, 60, LV_GRID_TEMPLATE_LAST};
+static lv_coord_t row_dsc[] = {60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, LV_GRID_TEMPLATE_LAST};
 
 static lv_obj_t *chart_img;
 static bool chart_open;
+
+// Temperature info row: g_temperature is refreshed by thread_peripheral every
+// few seconds, in tenths of a degree C (same unit the page_fans.c thresholds use).
+static lv_obj_t *temp_label;
+static char temp_text[96];
+
+#ifdef RSSI_SCAN_ANALOG
+typedef struct {
+    uint16_t freq_mhz;
+    int8_t   analog_idx; // rtc6715 channel index
+} rssi_scan_ch_t;
+
+static rssi_scan_ch_t rssi_channels[RSSI_SCAN_CH_MAX];
+static int rssi_ch_count;
+static lv_obj_t *rssi_cont;
+static lv_obj_t *rssi_chart;
+static lv_chart_series_t *rssi_series;
+static lv_obj_t *rssi_status_label;
+static bool rssi_scan_active;
+static int rssi_scan_idx;
+
+// Sweep width: which slice of the spectrum the scanner covers.
+enum { RSSI_RANGE_FULL = 0, RSSI_RANGE_LOWBAND, RSSI_RANGE_STANDARD, RSSI_RANGE_COUNT };
+static const char *const rssi_range_name[RSSI_RANGE_COUNT] = {"Full", "Lowband", "Standard"};
+static int rssi_range_mode;
+static lv_obj_t *rssi_range_label;
+
+// Sweep step: one point per analog channel, or a free sweep at a fixed step.
+// The RTC6715 synth steps in 2 MHz, so every step is an exact multiple of it
+// and 2 MHz is the finest there is.
+enum { RSSI_STEP_CHANNELS = 0, RSSI_STEP_COARSE, RSSI_STEP_FINE, RSSI_STEP_COUNT };
+static const char *const rssi_step_name[RSSI_STEP_COUNT] = {"Channels", "Coarse 4 MHz", "Fine 2 MHz"};
+static const int rssi_step_mhz[RSSI_STEP_COUNT] = {0, 4, 2};
+#define RSSI_FINE_SETTLE_US 40000 // PLL settle per point; adjacent points are a short hop
+static int rssi_step_mode;
+static lv_obj_t *rssi_step_label;
+static lv_obj_t *rssi_lo_lbl, *rssi_hi_lbl;   // frequency labels under the plot corners
+static lv_obj_t *band_lbl[48];                // band channel markers, A,B,E,F,R,L x 8
+static lv_coord_t rssi_plot_w, rssi_plot_left;
+#endif
 
 #ifndef HDZBOXPRO
 static lv_obj_t *label_name;
@@ -56,6 +132,271 @@ static void show_preview(int idx) {
         lv_obj_set_style_bg_color(swatch[i], lv_color_hex(colors[i]), 0);
 }
 #endif
+
+#ifdef RSSI_SCAN_ANALOG
+static bool rssi_borrowed_internal; // Expansion module switched off while scanning
+
+// Auto range: the Y axis starts at RSSI_MV_BASE_MIN..RSSI_MV_BASE_MAX and only
+// ever widens during a scan, so a strong emitter stretches the axis instead
+// of clipping at the top. Raw mV is kept per frequency so the whole trace can
+// be re-plotted when the range changes.
+#define RSSI_MV_BASE_MIN 640
+#define RSSI_MV_BASE_MAX 1200
+static int rssi_lo_mv = RSSI_MV_BASE_MIN;
+static int rssi_hi_mv = RSSI_MV_BASE_MAX;
+static int rssi_mv[RSSI_SCAN_CH_MAX]; // -1 = not measured yet
+static lv_obj_t *rssi_tick[5];        // Y axis labels, 0/25/50/75/100% of the range
+static lv_coord_t rssi_plot_top, rssi_plot_h;
+
+// The chart doesn't label its own axis: (re)place the mV tick labels along the
+// left edge of the plot area.
+static void update_rssi_ticks(void) {
+    for (int i = 0; i < 5; i++) {
+        int v = i * 25;
+        char tick[12];
+        snprintf(tick, sizeof(tick), "%d", rssi_lo_mv + (rssi_hi_mv - rssi_lo_mv) * v / 100);
+        lv_label_set_text(rssi_tick[i], tick);
+        lv_obj_update_layout(rssi_tick[i]);
+        lv_obj_align_to(rssi_tick[i], rssi_chart, LV_ALIGN_OUT_LEFT_TOP, -8,
+                        rssi_plot_top + rssi_plot_h - (rssi_plot_h * v / 100) -
+                            lv_obj_get_height(rssi_tick[i]) / 2);
+    }
+}
+
+// Scatter chart: each point carries its frequency as X, so the horizontal axis
+// is linear in MHz (an index-based line chart spaced points evenly regardless
+// of how far apart their frequencies are).
+static void set_rssi_point(lv_chart_series_t *ser, int idx, lv_coord_t y) {
+    lv_chart_set_value_by_id2(rssi_chart, ser, idx, rssi_channels[idx].freq_mhz, y);
+}
+
+// Frequency window of a sweep width mode, taken from the analog band tables
+// (scan_analog_idx_to_mhz is A,B,E,F,R,L x 8): Lowband = L1..L8, Standard =
+// E1..E8 (5645..5945). Full is unbounded.
+static void rssi_range_window(int mode, int *lo, int *hi) {
+    int first, last;
+    if (mode == RSSI_RANGE_LOWBAND) {
+        first = 40;
+        last = 47;
+    } else if (mode == RSSI_RANGE_STANDARD) {
+        first = 16;
+        last = 23;
+    } else {
+        *lo = 0;
+        *hi = 0xFFFF;
+        return;
+    }
+    *lo = *hi = scan_analog_idx_to_mhz[first];
+    for (int i = first; i <= last; i++) {
+        if (scan_analog_idx_to_mhz[i] < *lo)
+            *lo = scan_analog_idx_to_mhz[i];
+        if (scan_analog_idx_to_mhz[i] > *hi)
+            *hi = scan_analog_idx_to_mhz[i];
+    }
+}
+
+// Builds the sweep order for the current width, ascending by frequency so the
+// chart's X axis is a real frequency sweep.
+static void build_rssi_channel_list(void) {
+    int n = 0;
+
+    if (rssi_step_mode != RSSI_STEP_CHANNELS) {
+        // Free sweep over what the receiver actually tunes: Lowband = 5361..5621, Standard = E1..E8 =
+        // 5645..5945, Full = both ends.
+        int lo = 5361, hi = 5945;
+        if (rssi_range_mode == RSSI_RANGE_LOWBAND)
+            hi = 5621;
+        else if (rssi_range_mode == RSSI_RANGE_STANDARD)
+            lo = 5645;
+        int step = rssi_step_mhz[rssi_step_mode];
+        for (int f = lo; f <= hi && n < RSSI_SCAN_CH_MAX; f += step, n++) {
+            rssi_channels[n].freq_mhz = (uint16_t)f;
+            rssi_channels[n].analog_idx = -1;
+        }
+        if (rssi_channels[n - 1].freq_mhz != hi && n < RSSI_SCAN_CH_MAX) {
+            rssi_channels[n].freq_mhz = (uint16_t)hi;
+            rssi_channels[n].analog_idx = -1;
+            n++;
+        }
+        rssi_ch_count = n;
+        return;
+    }
+
+    int win_lo, win_hi;
+    rssi_range_window(rssi_range_mode, &win_lo, &win_hi);
+    // scan_freq_table is already strictly ascending by frequency; skip the
+    // HDZero-only rows, which the analog receiver has no channel for.
+    for (size_t i = 0; i < scan_freq_table_len && n < RSSI_SCAN_CH_MAX; i++) {
+        if (scan_freq_table[i].analog_channel < 0 ||
+            scan_freq_table[i].freq_mhz < win_lo || scan_freq_table[i].freq_mhz > win_hi)
+            continue;
+        rssi_channels[n].freq_mhz = scan_freq_table[i].freq_mhz;
+        rssi_channels[n].analog_idx = scan_freq_table[i].analog_channel;
+        n++;
+    }
+    rssi_ch_count = n;
+}
+
+// (Re)configure the chart for the current sweep width: point count, X range,
+// corner frequency labels and which band markers are visible and where.
+static void apply_rssi_range(void) {
+    build_rssi_channel_list();
+    if (rssi_ch_count < 2)
+        return;
+
+    int f_min = rssi_channels[0].freq_mhz;
+    int f_max = rssi_channels[rssi_ch_count - 1].freq_mhz;
+    lv_chart_set_point_count(rssi_chart, rssi_ch_count);
+    lv_chart_set_range(rssi_chart, LV_CHART_AXIS_PRIMARY_X, f_min, f_max);
+
+    char buf[24];
+    snprintf(buf, sizeof(buf), "%d MHz", f_min);
+    lv_label_set_text(rssi_lo_lbl, buf);
+    lv_obj_align_to(rssi_lo_lbl, rssi_chart, LV_ALIGN_OUT_BOTTOM_LEFT, 0, 8);
+    snprintf(buf, sizeof(buf), "%d MHz", f_max);
+    lv_label_set_text(rssi_hi_lbl, buf);
+    lv_obj_align_to(rssi_hi_lbl, rssi_chart, LV_ALIGN_OUT_BOTTOM_RIGHT, 0, 8);
+
+    for (int k = 0; k < 48; k++) {
+        int f = scan_analog_idx_to_mhz[k];
+        if (f < f_min || f > f_max) {
+            lv_obj_add_flag(band_lbl[k], LV_OBJ_FLAG_HIDDEN);
+            continue;
+        }
+        lv_obj_clear_flag(band_lbl[k], LV_OBJ_FLAG_HIDDEN);
+        lv_obj_update_layout(band_lbl[k]);
+        lv_obj_align_to(band_lbl[k], rssi_chart, LV_ALIGN_OUT_BOTTOM_LEFT,
+                        rssi_plot_left + rssi_plot_w * (f - f_min) / (f_max - f_min) -
+                            lv_obj_get_width(band_lbl[k]) / 2,
+                        40 + (k / 8) * 27);
+    }
+}
+
+static void start_rssi_scan(void) {
+    apply_rssi_range();
+#if defined(HDZGOGGLE2)
+    // The Expansion module shares the analog input; scan on the Built-in
+    // receiver for the duration (in memory only, same as Scan Now).
+    if (g_setting.source.analog_module == SETTING_SOURCES_ANALOG_MODULE_EXTERNAL) {
+        rssi_borrowed_internal = true;
+        g_setting.source.analog_module = SETTING_SOURCES_ANALOG_MODULE_INTERNAL;
+        Analog_Module_Power(1);
+    }
+#endif
+    rtc6715.init(1, 0);
+    scan_core_notify_analog_powered_on();
+
+    rssi_lo_mv = RSSI_MV_BASE_MIN;
+    rssi_hi_mv = RSSI_MV_BASE_MAX;
+    for (int i = 0; i < RSSI_SCAN_CH_MAX; i++)
+        rssi_mv[i] = -1;
+    update_rssi_ticks();
+    for (int i = 0; i < rssi_ch_count; i++)
+        set_rssi_point(rssi_series, i, LV_CHART_POINT_NONE);
+    rssi_scan_idx = 0;
+    rssi_scan_active = true;
+
+    lv_obj_move_foreground(rssi_cont);
+    lv_obj_clear_flag(rssi_cont, LV_OBJ_FLAG_HIDDEN);
+    lvgl_screen_orbit(false);
+}
+
+static void stop_rssi_scan(void) {
+    if (!rssi_scan_active)
+        return;
+    rssi_scan_active = false;
+    lv_obj_add_flag(rssi_cont, LV_OBJ_FLAG_HIDDEN);
+    lvgl_screen_orbit(g_setting.osd.orbit > 0);
+    rtc6715.init(0, 0);
+    scan_core_notify_analog_powered_off();
+#if defined(HDZGOGGLE2)
+    if (rssi_borrowed_internal) {
+        rssi_borrowed_internal = false;
+        g_setting.source.analog_module = SETTING_SOURCES_ANALOG_MODULE_EXTERNAL;
+        Analog_Module_Power(1);
+    }
+#endif
+}
+
+// One frequency per tick; scan_probe_analog() blocks for the PLL to lock,
+// which paces the sweep.
+static void rssi_scan_tick(void) {
+    if (!rssi_scan_active)
+        return;
+
+    const rssi_scan_ch_t *c = &rssi_channels[rssi_scan_idx];
+    uint16_t mv = 0;
+    bool valid = false;
+    if (c->analog_idx >= 0)
+        scan_probe_analog((uint8_t)c->analog_idx, &mv, &valid);
+    else
+        valid = scan_probe_analog_freq(c->freq_mhz, RSSI_FINE_SETTLE_US, &mv);
+
+    // Relative scale over the auto range; there is no dBm calibration in this
+    // firmware. Widen the range when a reading falls outside it and re-plot
+    // everything measured so far against the new axis.
+    bool widened = false;
+    if ((int)mv > rssi_hi_mv) {
+        rssi_hi_mv = mv;
+        widened = true;
+    }
+    if ((int)mv < rssi_lo_mv) {
+        rssi_lo_mv = mv;
+        widened = true;
+    }
+    rssi_mv[rssi_scan_idx] = mv;
+    for (int i = 0; i < rssi_ch_count && widened; i++) {
+        if (rssi_mv[i] >= 0)
+            set_rssi_point(rssi_series, i, (rssi_mv[i] - rssi_lo_mv) * 100 / (rssi_hi_mv - rssi_lo_mv));
+    }
+    if (widened)
+        update_rssi_ticks();
+    else
+        set_rssi_point(rssi_series, rssi_scan_idx, ((int)mv - rssi_lo_mv) * 100 / (rssi_hi_mv - rssi_lo_mv));
+
+    char buf[48];
+    snprintf(buf, sizeof(buf), "%u MHz  %u mV", c->freq_mhz, mv);
+    lv_label_set_text(rssi_status_label, buf);
+
+    rssi_scan_idx = (rssi_scan_idx + 1) % rssi_ch_count;
+}
+#endif // RSSI_SCAN_ANALOG
+
+static void refresh_temp_label(void) {
+    char line[96];
+    // nct_read_temperature() returns -1 when a sensor can't be read.
+    char t[3][16];
+    // thread.c stores left as (reading + 100), so a failed read (-1) shows up as 99.
+    int v[3] = {g_temperature.top, g_temperature.left == 99 ? -1 : g_temperature.left,
+                g_temperature.right};
+    for (int i = 0; i < 3; i++) {
+        if (v[i] < 0)
+            snprintf(t[i], sizeof(t[i]), "--");
+        else
+            snprintf(t[i], sizeof(t[i]), "%d.%d", v[i] / 10, v[i] % 10);
+    }
+#if defined(HDZBOXPRO)
+    // BoxPro has a single NCT75, stored in g_temperature.top.
+    snprintf(line, sizeof(line), "%s: %s C", _lang("Temperature"), t[0]);
+#else
+    snprintf(line, sizeof(line), "%s:  %s %s   %s %s   %s %s C", _lang("Temperature"),
+             _lang("Top"), t[0], _lang("Left"), t[1], _lang("Right"), t[2]);
+#endif
+    if (strcmp(line, temp_text) != 0) {
+        snprintf(temp_text, sizeof(temp_text), "%s", line);
+        lv_label_set_text(temp_label, temp_text);
+    }
+}
+
+// Runs from main_menu_update()'s per-page tick, which fires for every page
+// whether or not it is open: everything here must be cheap when idle.
+static void page_tools_on_update(uint32_t delta_ms) {
+    (void)delta_ms;
+    refresh_temp_label();
+#ifdef RSSI_SCAN_ANALOG
+    rssi_scan_tick();
+#endif
+}
 
 static void show_chart(bool is_focus_chart) {
     char filename[128];
@@ -112,6 +453,37 @@ static lv_obj_t *page_tools_create(lv_obj_t *parent, panel_arr_t *arr) {
     snprintf(buf, sizeof(buf), "%s", _lang("Frequency Chart"));
     create_label_item(cont, buf, 1, ROW_FREQ_CHART, 5);
 
+#ifdef RSSI_SCAN_ANALOG
+    snprintf(buf, sizeof(buf), "%s", _lang("RSSI Scanner"));
+    create_label_item(cont, buf, 1, ROW_RSSI_SCAN, 5);
+
+    rssi_range_mode = (int)ini_getl("tools", "rssi_range", RSSI_RANGE_FULL, SETTING_INI);
+    if (rssi_range_mode < 0 || rssi_range_mode >= RSSI_RANGE_COUNT)
+        rssi_range_mode = RSSI_RANGE_FULL;
+    create_label_item(cont, _lang("RSSI Scan Width"), 1, ROW_RSSI_RANGE, 2);
+    rssi_range_label = create_label_item(cont, "", 3, ROW_RSSI_RANGE, 3);
+    snprintf(buf, sizeof(buf), "< %s >", _lang(rssi_range_name[rssi_range_mode]));
+    lv_label_set_text(rssi_range_label, buf);
+
+    rssi_step_mode = (int)ini_getl("tools", "rssi_step", RSSI_STEP_CHANNELS, SETTING_INI);
+    if (rssi_step_mode < 0 || rssi_step_mode >= RSSI_STEP_COUNT)
+        rssi_step_mode = RSSI_STEP_CHANNELS;
+    create_label_item(cont, _lang("RSSI Scan Step"), 1, ROW_RSSI_STEP, 2);
+    rssi_step_label = create_label_item(cont, "", 3, ROW_RSSI_STEP, 3);
+    snprintf(buf, sizeof(buf), "< %s >", _lang(rssi_step_name[rssi_step_mode]));
+    lv_label_set_text(rssi_step_label, buf);
+#endif
+
+    // Info row, not an action: shows the goggle's temperature probes live.
+    lv_obj_clear_flag(pp_tools.p_arr.panel[ROW_TEMPERATURE], FLAG_SELECTABLE);
+    temp_label = create_label_item(cont, "", 1, ROW_TEMPERATURE, 5);
+    temp_text[0] = '\0';
+    refresh_temp_label();
+
+    // submenu_click() treats the last row as "Back" and leaves the page.
+    snprintf(buf, sizeof(buf), "< %s", _lang("Back"));
+    create_label_item(cont, buf, 1, ROW_BACK, 1);
+
     lv_obj_t *note = lv_label_create(cont);
     int note_row = TOOLS_ROW_COUNT;
     // Wider than buf: the combined note sentences run past 128 bytes and
@@ -137,17 +509,15 @@ static lv_obj_t *page_tools_create(lv_obj_t *parent, panel_arr_t *arr) {
     }
 
     snprintf(note_buf, sizeof(note_buf), "%s\n%s\n%s",
-             _lang("Click Focus Chart or Frequency Chart to display it fullscreen, click again to dismiss."),
+             _lang(TOOLS_NOTE_ACTIONS),
              _lang("Click Theme to switch theme."),
              _lang("Restart the goggles to apply the new theme."));
 
     preview_idx = g_setting.ui_theme;
     show_preview(preview_idx);
 #else
-    lv_obj_clear_flag(pp_tools.p_arr.panel[ROW_PAD], FLAG_SELECTABLE);
-
     snprintf(note_buf, sizeof(note_buf), "%s",
-             _lang("Click Focus Chart or Frequency Chart to display it fullscreen, click again to dismiss."));
+             _lang(TOOLS_NOTE_ACTIONS));
 #endif
 
     lv_label_set_text(note, note_buf);
@@ -166,11 +536,102 @@ static lv_obj_t *page_tools_create(lv_obj_t *parent, panel_arr_t *arr) {
     lv_obj_set_size(chart_img, DRAW_HOR_RES_FHD, DRAW_VER_RES_FHD);
     chart_open = false;
 
+#ifdef RSSI_SCAN_ANALOG
+    build_rssi_channel_list();
+
+    rssi_cont = lv_obj_create(lv_scr_act());
+    lv_obj_add_flag(rssi_cont, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(rssi_cont, LV_OBJ_FLAG_FLOATING);
+    lv_obj_clear_flag(rssi_cont, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(rssi_cont, 0, 0);
+    lv_obj_set_size(rssi_cont, DRAW_HOR_RES_FHD, DRAW_VER_RES_FHD);
+    lv_obj_set_style_bg_color(rssi_cont, lv_color_hex(UI_COLOR_BG_ROOT), 0);
+    lv_obj_set_style_bg_opa(rssi_cont, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(rssi_cont, 0, 0);
+    lv_obj_set_style_radius(rssi_cont, 0, 0);
+
+    lv_obj_t *rssi_title = lv_label_create(rssi_cont);
+    lv_label_set_text(rssi_title, _lang("RSSI Scanner"));
+    lv_obj_set_style_text_font(rssi_title, UI_PAGE_TEXT_FONT, 0);
+    lv_obj_set_style_text_color(rssi_title, lv_color_hex(TEXT_COLOR_DEFAULT), 0);
+    lv_obj_align(rssi_title, LV_ALIGN_TOP_MID, 0, 20);
+
+    rssi_status_label = lv_label_create(rssi_cont);
+    lv_label_set_text(rssi_status_label, "");
+    lv_obj_set_style_text_font(rssi_status_label, UI_PAGE_LABEL_FONT, 0);
+    lv_obj_set_style_text_color(rssi_status_label, lv_color_hex(UI_COLOR_ACCENT), 0);
+    lv_obj_align(rssi_status_label, LV_ALIGN_TOP_MID, 0, 60);
+
+    rssi_chart = lv_chart_create(rssi_cont);
+    lv_chart_set_type(rssi_chart, LV_CHART_TYPE_SCATTER);
+    lv_chart_set_point_count(rssi_chart, rssi_ch_count);
+    lv_chart_set_range(rssi_chart, LV_CHART_AXIS_PRIMARY_Y, 0, 100);
+    lv_chart_set_range(rssi_chart, LV_CHART_AXIS_PRIMARY_X, rssi_channels[0].freq_mhz,
+                       rssi_channels[rssi_ch_count - 1].freq_mhz);
+    lv_chart_set_div_line_count(rssi_chart, 3, 7); // horizontal lines at 25/50/75
+    lv_obj_set_size(rssi_chart, lv_pct(85), lv_pct(50)); // leaves room for the band rows below
+    lv_obj_align(rssi_chart, LV_ALIGN_CENTER, 0, 10);
+    lv_obj_set_style_size(rssi_chart, 5, LV_PART_INDICATOR); // a dot per measured frequency
+    // The chart defaults to a light theme background -- match the page's dark
+    // theme instead of leaving a white plot area behind the red trace.
+    lv_obj_set_style_bg_color(rssi_chart, lv_color_hex(UI_COLOR_BG_PANEL), 0);
+    lv_obj_set_style_bg_opa(rssi_chart, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_color(rssi_chart, lv_color_hex(TEXT_COLOR_DEFAULT), 0);
+    lv_obj_set_style_line_color(rssi_chart, lv_color_hex(0x404040), LV_PART_MAIN);
+    // Keep a margin inside the plot so a value of 0 isn't hidden on the border.
+    lv_obj_set_style_pad_all(rssi_chart, 8, LV_PART_MAIN);
+    rssi_series = lv_chart_add_series(rssi_chart, lv_color_hex(UI_COLOR_ACCENT), LV_CHART_AXIS_PRIMARY_Y);
+    lv_obj_set_style_line_width(rssi_chart, 3, LV_PART_ITEMS);
+
+    lv_obj_update_layout(rssi_chart);
+    rssi_plot_h = lv_obj_get_content_height(rssi_chart);
+    rssi_plot_top = lv_obj_get_style_pad_top(rssi_chart, LV_PART_MAIN) +
+                    lv_obj_get_style_border_width(rssi_chart, LV_PART_MAIN);
+    for (int i = 0; i < 5; i++) {
+        rssi_tick[i] = lv_label_create(rssi_cont);
+        lv_obj_set_style_text_font(rssi_tick[i], UI_PAGE_LABEL_FONT, 0);
+        lv_obj_set_style_text_color(rssi_tick[i], lv_color_hex(TEXT_COLOR_DEFAULT), 0);
+    }
+    update_rssi_ticks();
+
+    rssi_lo_lbl = lv_label_create(rssi_cont);
+    lv_obj_set_style_text_font(rssi_lo_lbl, UI_PAGE_LABEL_FONT, 0);
+    lv_obj_set_style_text_color(rssi_lo_lbl, lv_color_hex(TEXT_COLOR_DEFAULT), 0);
+    rssi_hi_lbl = lv_label_create(rssi_cont);
+    lv_obj_set_style_text_font(rssi_hi_lbl, UI_PAGE_LABEL_FONT, 0);
+    lv_obj_set_style_text_color(rssi_hi_lbl, lv_color_hex(TEXT_COLOR_DEFAULT), 0);
+
+    // Band markers, one row per band under the frequency labels, each in its
+    // own colour (same hues as the reference frequency chart). All 48 are
+    // created once; apply_rssi_range() shows the ones inside the current
+    // sweep width at their channel's real frequency.
+    static const char band_letter[6] = {'A', 'B', 'E', 'F', 'R', 'L'};
+    static const uint32_t band_color[6] = {0x40E0D0, 0xB5E61D, 0xFFA040, 0xA070FF, 0xFF5C7A, 0x6EA8FF};
+    rssi_plot_w = lv_obj_get_content_width(rssi_chart);
+    rssi_plot_left = lv_obj_get_style_pad_left(rssi_chart, LV_PART_MAIN) +
+                     lv_obj_get_style_border_width(rssi_chart, LV_PART_MAIN);
+    for (int k = 0; k < 48; k++) {
+        char name[4];
+        snprintf(name, sizeof(name), "%c%d", band_letter[k / 8], k % 8 + 1);
+        band_lbl[k] = lv_label_create(rssi_cont);
+        lv_label_set_text(band_lbl[k], name);
+        lv_obj_set_style_text_font(band_lbl[k], UI_PAGE_LABEL_FONT, 0);
+        lv_obj_set_style_text_color(band_lbl[k], lv_color_hex(band_color[k / 8]), 0);
+    }
+    apply_rssi_range();
+
+    rssi_scan_active = false;
+#endif
+
+
     return page;
 }
 
 static void page_tools_exit(void) {
     hide_chart();
+#ifdef RSSI_SCAN_ANALOG
+    stop_rssi_scan();
+#endif
 }
 
 static void page_tools_on_click(uint8_t key, int sel) {
@@ -180,6 +641,12 @@ static void page_tools_on_click(uint8_t key, int sel) {
         hide_chart();
         return;
     }
+#ifdef RSSI_SCAN_ANALOG
+    if (rssi_scan_active) {
+        stop_rssi_scan();
+        return;
+    }
+#endif
 
     switch (sel) {
     case ROW_FOCUS_CHART:
@@ -188,6 +655,27 @@ static void page_tools_on_click(uint8_t key, int sel) {
     case ROW_FREQ_CHART:
         show_chart(false);
         break;
+#ifdef RSSI_SCAN_ANALOG
+    case ROW_RSSI_SCAN:
+        start_rssi_scan();
+        break;
+    case ROW_RSSI_STEP: {
+        char buf[32];
+        rssi_step_mode = (rssi_step_mode + 1) % RSSI_STEP_COUNT;
+        ini_putl("tools", "rssi_step", rssi_step_mode, SETTING_INI);
+        snprintf(buf, sizeof(buf), "< %s >", _lang(rssi_step_name[rssi_step_mode]));
+        lv_label_set_text(rssi_step_label, buf);
+        break;
+    }
+    case ROW_RSSI_RANGE: {
+        char buf[32];
+        rssi_range_mode = (rssi_range_mode + 1) % RSSI_RANGE_COUNT;
+        ini_putl("tools", "rssi_range", rssi_range_mode, SETTING_INI);
+        snprintf(buf, sizeof(buf), "< %s >", _lang(rssi_range_name[rssi_range_mode]));
+        lv_label_set_text(rssi_range_label, buf);
+        break;
+    }
+#endif
 #ifndef HDZBOXPRO
     case ROW_THEME:
         preview_idx = (preview_idx + 1) % ui_theme_count();
@@ -211,7 +699,7 @@ page_pack_t pp_tools = {
     .enter = NULL,
     .exit = page_tools_exit,
     .on_created = NULL,
-    .on_update = NULL,
+    .on_update = page_tools_on_update,
     .on_roller = NULL,
     .on_click = page_tools_on_click,
     .on_right_button = NULL,

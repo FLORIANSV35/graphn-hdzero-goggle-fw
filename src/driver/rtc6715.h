@@ -7,6 +7,8 @@ extern "C" {
 typedef struct {
     void (*init)(bool power_on, bool audio_on);
     void (*set_ch)(int ch);
+    // Free tuning in MHz (2 MHz step, odd frequencies are exact).
+    void (*set_freq)(int mhz);
     int rssi;
 } rtc6715_t;
 

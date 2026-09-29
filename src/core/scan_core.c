@@ -279,6 +279,21 @@ bool scan_probe_analog(uint8_t channel_idx,
     return valid;
 }
 
+bool scan_probe_analog_freq(uint16_t freq_mhz, uint32_t settle_us, uint16_t *rssi_mv_out) {
+    mark_probe_activity();
+    if (analog_powered_down) {
+        rtc6715.init(1, 0);
+        analog_powered_down = false;
+    }
+    rtc6715.set_freq(freq_mhz);
+    usleep(settle_us);
+
+    int mv = rtc6715_get_rssi();
+    if (mv < 0) mv = 0;
+    if (rssi_mv_out) *rssi_mv_out = (uint16_t)mv;
+    return (uint16_t)mv > analog_signal_threshold_mv();
+}
+
 // Map raw signal strength to 0..100 for sorting.
 static uint8_t hdz_strength_norm(uint8_t gain) {
     // DM6302 gain table is 0..60 (see driver/dm6302.c DM6302_gain_tab).

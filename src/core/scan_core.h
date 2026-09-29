@@ -72,6 +72,11 @@ bool scan_probe_analog(uint8_t channel_idx,
                        uint16_t *rssi_mv_out, bool *valid_out);
 
 scan_result_t scan_probe_both(const scan_freq_entry_t *entry);
+
+// Like scan_probe_analog but tuned to an arbitrary frequency (MHz) instead of a
+// channel index, waiting settle_us for the PLL. Returns whether the reading is
+// above the analog signal threshold; the raw mV goes to *rssi_mv_out.
+bool scan_probe_analog_freq(uint16_t freq_mhz, uint32_t settle_us, uint16_t *rssi_mv_out);
 #endif
 
 // Fills out[] with the bandwidth(s) to sweep based on source.hdzero_bw:

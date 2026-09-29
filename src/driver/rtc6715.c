@@ -93,6 +93,15 @@ static void rtc6715_set_ch(int ch) {
     LOGI("Set_RTC6715: %d", (uint16_t)ch);
 }
 
+// Tune to any frequency, not just a channel-table entry. The synth word is
+// N<<7 | A with f = 2*(32*N + A) + 479 (MHz), so the step is 2 MHz and odd
+// frequencies are exact; the channel table above is the same formula.
+static void rtc6715_set_freq(int mhz) {
+    int v = (mhz - 479) / 2;
+    MM_Write(0x00, 0x08);
+    MM_Write(0x01, ((v / 32) << 7) | (v % 32));
+}
+
 int rtc6715_get_rssi() {
     static int rssi_adc = 0;
     int value = gpdac0_get();
@@ -108,6 +117,8 @@ int rtc6715_get_rssi() {
 static void rtc6715_init(bool power_on, bool audio_on) {
 }
 static void rtc6715_set_ch(int ch) {
+}
+static void rtc6715_set_freq(int mhz) {
 }
 #endif
 
@@ -129,5 +140,6 @@ void *thread_rtc6715_rssi(void *ptr) {
 rtc6715_t rtc6715 = {
     .init = rtc6715_init,
     .set_ch = rtc6715_set_ch,
+    .set_freq = rtc6715_set_freq,
     .rssi = 0,
 };
