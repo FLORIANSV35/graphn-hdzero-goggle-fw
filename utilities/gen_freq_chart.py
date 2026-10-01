@@ -8,8 +8,8 @@ Montserrat (the UI font, in utilities/font).
 
     python3 utilities/gen_freq_chart.py OUT_DIR    # writes OUT_DIR/freq_chart_{hd,fhd}.png
 
-Then shrink them (64 colors keeps the band hues right):
-    pngquant --quality=85-100 --colors 64 --speed 1 --strip -o freq_chart.png freq_chart_hd.png
+Then shrink them (128 colors keeps the band hues right):
+    pngquant --quality=70-100 --colors 128 --speed 1 --strip -o freq_chart.png freq_chart_hd.png
 """
 import os
 import sys
@@ -31,25 +31,35 @@ def numbered(letter, freqs):
     return [("%s%d" % (letter, i + 1), f) for i, f in enumerate(freqs)]
 
 
-# key, row label, colour, descriptor, [(channel name, MHz), ...]
+# Channel width in MHz per band, drawn to scale. Analog video occupies about
+# 18 MHz; the digital plans use their nominal bandwidth (DJI O3 "10 or 20 MHz"
+# is drawn as 20 MHz with a 10 MHz core).
+ANALOG_BW = 18
+
+# HDZero channels, from the goggle firmware (src/core/scan_core.c, osd.c):
+# Raceband R1-R8 plus E1, F1, F2 and F4. Outlined in white on the chart.
+HDZERO = {("R", i) for i in range(1, 9)} | {("E", 1), ("F", 1), ("F", 2), ("F", 4)}
+HDZ_WHITE = (245, 245, 245)
+
+# key, row label, colour, descriptor, width MHz, inner core MHz, [(channel name, MHz), ...]
 BANDS = [
-    ("A", "A", (64, 224, 208), "Boscam A",
+    ("A", "A", (64, 224, 208), "Boscam A", ANALOG_BW, 0,
      numbered("A", [5865, 5845, 5825, 5805, 5785, 5765, 5745, 5725])),
-    ("B", "B", (181, 230, 29), "Boscam B",
+    ("B", "B", (181, 230, 29), "Boscam B", ANALOG_BW, 0,
      numbered("B", [5733, 5752, 5771, 5790, 5809, 5828, 5847, 5866])),
-    ("E", "E", (255, 160, 64), "Foxtech / DJI",
+    ("E", "E", (255, 160, 64), "Foxtech / DJI", ANALOG_BW, 0,
      numbered("E", [5705, 5685, 5665, 5645, 5885, 5905, 5925, 5945])),
-    ("F", "F/I", (160, 112, 255), "FatShark / ImmersionRC",
+    ("F", "F/I", (160, 112, 255), "FatShark / ImmersionRC", ANALOG_BW, 0,
      numbered("F", [5740, 5760, 5780, 5800, 5820, 5840, 5860, 5880])),
-    ("R", "R", (255, 92, 122), "Raceband",
+    ("R", "R", (255, 92, 122), "Raceband", ANALOG_BW, 0,
      numbered("R", [5658, 5695, 5732, 5769, 5806, 5843, 5880, 5917])),
-    ("D", "D", (84, 128, 240), "Walksnail / DJI V1, 25 MHz",
+    ("D", "D", (84, 128, 240), "Walksnail / DJI V1, 25 MHz", 25, 0,
      numbered("D", [5660, 5695, 5735, 5770, 5805, 5878, 5914, 5839])),
-    ("J", "J", (140, 186, 255), "Walksnail / DJI V1, 50 MHz",
+    ("J", "J", (140, 186, 255), "Walksnail / DJI V1, 50 MHz", 50, 0,
      numbered("J", [5695, 5770, 5878])),
-    ("O", "O", (52, 178, 102), "DJI O3, 10 or 20 MHz",
+    ("O", "O", (52, 178, 102), "DJI O3, 10 or 20 MHz", 20, 10,
      numbered("O", [5669, 5705, 5768, 5804, 5839, 5876, 5912])),
-    ("Q", "Q", (118, 204, 150), "DJI O3, 40 MHz",
+    ("Q", "Q", (118, 204, 150), "DJI O3, 40 MHz", 40, 0,
      numbered("Q", [5677, 5794, 5902])),
 ]
 
@@ -95,24 +105,36 @@ def render(w, h):
     for f in range(5650, 5951, 50):
         d.text((fx(f), y_axis - px(8)), str(f), font=font(28), fill=TEXT, anchor="ms")
 
-    def channel(cx, y, name, freq, color):
-        bw, bh = px(64), px(44)
+    ppm = (x1 - x0) / float(F_MAX - F_MIN)  # pixels per MHz
+
+    def channel(cx, y, name, freq, color, bw_mhz, core_mhz, hdzero):
+        bw, bh = int(bw_mhz * ppm), px(44)
         box = [cx - bw // 2, y, cx + bw // 2, y + bh]
-        d.rounded_rectangle(box, radius=px(9), fill=mix(color, BG, 0.28), outline=color,
-                            width=max(2, px(2)))
+        d.rounded_rectangle(box, radius=px(9), fill=mix(color, BG, 0.28),
+                            outline=HDZ_WHITE if hdzero else color,
+                            width=max(2, px(4 if hdzero else 2)))
+        if core_mhz:
+            cw = int(core_mhz * ppm)
+            d.rectangle([cx - cw // 2, y + px(6), cx + cw // 2, y + bh - px(6)],
+                        fill=mix(color, BG, 0.55))
         d.text((cx, y + bh // 2), name, font=font(26), fill=TEXT, anchor="mm")
         d.text((cx, y + bh + px(4)), str(freq), font=font(18), fill=DIM, anchor="ma")
 
-    for r, (_key, label, color, desc, channels) in enumerate(BANDS):
+    for r, (key, label, color, desc, bw_mhz, core_mhz, channels) in enumerate(BANDS):
         y = y_rows + r * pitch
         d.text((px(60), y + px(2)), label, font=font(46), fill=color)
         d.text((px(60), y + px(58)), desc, font=font(15), fill=DIM)
-        for name, f in channels:
-            channel(fx(f), y + px(6), name, f, color)
+        for i, (name, f) in enumerate(channels):
+            channel(fx(f), y + px(6), name, f, color, bw_mhz, core_mhz, (key, i + 1) in HDZERO)
 
-    d.text((px(60), y_end + px(22)),
-           "Markers sit at each channel's centre frequency. Channels are drawn the same size, whatever their real width.",
-           font=font(20), fill=DIM)
+    # legend
+    ly = y_end + px(18)
+    d.rounded_rectangle([px(60), ly, px(60) + px(44), ly + px(32)], radius=px(8),
+                        fill=mix(HDZ_WHITE, BG, 0.28), outline=HDZ_WHITE, width=max(2, px(4)))
+    d.text((px(118), ly + px(16)), "HDZero channel", font=font(22), fill=TEXT, anchor="lm")
+    d.text((px(380), ly + px(16)),
+           "Bar width = channel bandwidth (analog about 18 MHz). HDZero Lowband (5362-5621 MHz) is off this scale.",
+           font=font(20), fill=DIM, anchor="lm")
 
     return img.resize((w, h), Image.LANCZOS)
 
