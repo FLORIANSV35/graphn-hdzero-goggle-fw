@@ -239,6 +239,9 @@ static lv_obj_t *page_playback_create(lv_obj_t *parent, panel_arr_t *arr) {
     // content's LV_SIZE_CONTENT height correct for whichever of them (just
     // the label, or the label + the bar) is actually visible.
     lv_obj_set_flex_flow(lv_msgbox_get_content(status), LV_FLEX_FLOW_COLUMN);
+    // Gap between the label and the conversion progress bar (hidden children
+    // don't take part in the flex layout, so other messages are unaffected).
+    lv_obj_set_style_pad_row(lv_msgbox_get_content(status), 20, 0);
 
     // Long-press action menu: a small centered panel with up to 3 rows,
     // styled like the status box. Text and row count are (re)built per
