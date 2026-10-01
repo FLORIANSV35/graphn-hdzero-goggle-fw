@@ -420,27 +420,30 @@ static int post_bootup_actions_cmp(const void *lhs, const void *rhs) {
 }
 
 void main_menu_init(void) {
-    // Initialize All Pages
-    page_packs[page_packs_count++] = &pp_scannow;
+    // Initialize All Pages, in sidebar order. ELRS and WiFi only exist with
+    // the full feature set; Analog RSSI only on the Goggle 2 and Box Pro.
     page_packs[page_packs_count++] = &pp_source;
-    page_packs[page_packs_count++] = &pp_imagesettings;
-    page_packs[page_packs_count++] = &pp_osd;
-    page_packs[page_packs_count++] = &pp_power;
-    page_packs[page_packs_count++] = &pp_fans;
-    page_packs[page_packs_count++] = &pp_record;
-    page_packs[page_packs_count++] = &pp_audio;
-    page_packs[page_packs_count++] = &pp_autoscan;
+    page_packs[page_packs_count++] = &pp_tools;
+    page_packs[page_packs_count++] = &pp_scannow;
+    page_packs[page_packs_count++] = &pp_playback;
+    page_packs[page_packs_count++] = &pp_autoscan; // "Startup"
+    page_packs[page_packs_count++] = &pp_storage;
     if (g_setting.has_all_features) {
         page_packs[page_packs_count++] = &pp_elrs;
+    }
+    page_packs[page_packs_count++] = &pp_record;
+    page_packs[page_packs_count++] = &pp_audio;
+    page_packs[page_packs_count++] = &pp_power;
+    page_packs[page_packs_count++] = &pp_fans;
+    page_packs[page_packs_count++] = &pp_osd;
+    page_packs[page_packs_count++] = &pp_imagesettings;
+    page_packs[page_packs_count++] = &pp_input;
+    if (g_setting.has_all_features) {
         page_packs[page_packs_count++] = &pp_wifi;
     }
     page_packs[page_packs_count++] = &pp_headtracker;
-    page_packs[page_packs_count++] = &pp_playback;
-    page_packs[page_packs_count++] = &pp_storage;
-    page_packs[page_packs_count++] = &pp_version;
-    page_packs[page_packs_count++] = &pp_tools;
     page_packs[page_packs_count++] = &pp_clock;
-    page_packs[page_packs_count++] = &pp_input;
+    page_packs[page_packs_count++] = &pp_version; // "Firmware"
 #if defined(HDZBOXPRO) || defined(HDZGOGGLE2)
     page_packs[page_packs_count++] = &pp_analog_rssi;
 #endif
