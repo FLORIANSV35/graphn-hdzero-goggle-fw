@@ -162,6 +162,9 @@ static lv_obj_t *page_record_create(lv_obj_t *parent, panel_arr_t *arr) {
     lv_obj_set_grid_cell(arr->panel[ROW_RECORD_BITRATE], LV_GRID_ALIGN_STRETCH, 0, 6,
                          LV_GRID_ALIGN_STRETCH, ROW_RECORD_BITRATE, 2);
     lv_obj_clear_flag(arr->panel[ROW_RECORD_BITRATE_WRAP], FLAG_SELECTABLE);
+    // Second row of the merged Bitrate card: without this its own card is drawn
+    // over the lower half of the Bitrate card and cuts its focus outline.
+    arr->no_card |= 1u << ROW_RECORD_BITRATE_WRAP;
     create_btn_group_item(&btn_group_rate_control, cont, 2, _lang("Rate Control"), "CBR", "VBR", "", "", ROW_RATE_CONTROL);
     create_slider_item(&slider_group_vbr_quality, cont, _lang("VBR Quality"), VBR_QUALITY_MAX, g_setting.record.vbr_quality, ROW_VBR_QUALITY);
     create_slider_item(&slider_group_vbr_max_qp, cont, _lang("VBR Max QP"), VBR_MAX_QP_MAX, g_setting.record.vbr_max_qp, ROW_VBR_MAX_QP);

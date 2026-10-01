@@ -32,7 +32,7 @@ extern "C" {
 #define UI_PAGE_BUTTON_COMPACT_SIZE       120
 #define UI_PAGE_SLIDER_SIZE               320, 60
 #define UI_PAGE_SLIDER_RANGE_SIZE         320, 3
-#define UI_PAGE_SLIDER_GROUP_SIZE         160, 60
+#define UI_PAGE_SLIDER_GROUP_SIZE         100, 60
 #define UI_PAGE_SLIDER_COMPACT_SIZE       200, 40
 #define UI_PAGE_SLIDER_COMPACT_GROUP_SIZE 160, 40
 #define UI_PAGE_ARROW_SIZE                200, 60
