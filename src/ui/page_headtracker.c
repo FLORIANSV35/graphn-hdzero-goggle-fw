@@ -17,6 +17,21 @@ typedef enum {
     PAGE2 = 2,
 } page_t;
 
+// Rows. Tracking On/Off and the page picker are on every page; the rows below
+// them belong to whichever page is selected.
+enum {
+    ROW_TRACKING = 0,
+    ROW_PAGE = 1,
+    // Tracking page
+    ROW_CALIBRATE = 2,
+    ROW_SET_CENTER = 3,
+    ROW_MAX_ANGLE = 4,
+    // Tilt Alarm page
+    ROW_ALARM_STATE = 2,
+    ROW_ALARM_ANGLE = 3,
+    ROW_BACK = 5,
+};
+
 static btn_group_t page_select;
 static page_t curr_page = 0;
 
@@ -41,59 +56,54 @@ static lv_timer_t *set_alarm_angle_timer = NULL;
 bool angle_slider_selected;
 
 static void update_visibility(uint8_t page) {
+    panel_arr_t *arr = &pp_headtracker.p_arr;
+    const bool enabled = g_setting.ht.enable;
+    const bool alarm_on = g_setting.ht.alarm_state != SETTING_HT_ALARM_STATE_OFF;
 
-    // enable/disable elements
-    if (g_setting.ht.enable && page == PAGE1) {
-        lv_obj_clear_state(label_cali, STATE_DISABLED);
-        lv_obj_clear_state(label_center, STATE_DISABLED);
-        slider_enable(&slider_group, true);
+    // the Tracking toggle and the page picker are always usable
+    lv_obj_add_flag(arr->panel[ROW_TRACKING], FLAG_SELECTABLE);
+    lv_obj_add_flag(arr->panel[ROW_PAGE], FLAG_SELECTABLE);
 
-        lv_obj_add_flag(pp_headtracker.p_arr.panel[1], FLAG_SELECTABLE);
-        lv_obj_add_flag(pp_headtracker.p_arr.panel[2], FLAG_SELECTABLE);
-        lv_obj_add_flag(pp_headtracker.p_arr.panel[3], FLAG_SELECTABLE);
-        lv_obj_add_flag(pp_headtracker.p_arr.panel[4], FLAG_SELECTABLE);
-
-    } else if (page == PAGE1) {
-        lv_obj_add_state(label_cali, STATE_DISABLED);
-        lv_obj_add_state(label_center, STATE_DISABLED);
-        slider_enable(&slider_group, false);
-
-        lv_obj_add_flag(pp_headtracker.p_arr.panel[1], FLAG_SELECTABLE);
-        lv_obj_clear_flag(pp_headtracker.p_arr.panel[2], FLAG_SELECTABLE);
-        lv_obj_clear_flag(pp_headtracker.p_arr.panel[3], FLAG_SELECTABLE);
-        lv_obj_clear_flag(pp_headtracker.p_arr.panel[4], FLAG_SELECTABLE);
-    }
-
-    if (g_setting.ht.enable && page == PAGE2) {
-        btn_group_enable(&alarm_state, true);
-
-        lv_obj_add_flag(pp_headtracker.p_arr.panel[1], FLAG_SELECTABLE);
-        lv_obj_clear_flag(pp_headtracker.p_arr.panel[3], FLAG_SELECTABLE);
-        lv_obj_clear_flag(pp_headtracker.p_arr.panel[4], FLAG_SELECTABLE);
-
-        if (g_setting.ht.alarm_state != SETTING_HT_ALARM_STATE_OFF) {
-            lv_obj_clear_state(label_alarm_angle, STATE_DISABLED);
-            lv_obj_add_flag(pp_headtracker.p_arr.panel[2], FLAG_SELECTABLE);
-
+    // enable/disable elements: everything but Tracking/Page needs tracking on
+    if (page == PAGE1) {
+        if (enabled) {
+            lv_obj_clear_state(label_cali, STATE_DISABLED);
+            lv_obj_clear_state(label_center, STATE_DISABLED);
         } else {
-            lv_obj_add_state(label_alarm_angle, STATE_DISABLED);
-            lv_obj_clear_flag(pp_headtracker.p_arr.panel[2], FLAG_SELECTABLE);
+            lv_obj_add_state(label_cali, STATE_DISABLED);
+            lv_obj_add_state(label_center, STATE_DISABLED);
         }
-    } else if (page == PAGE2) {
-        lv_obj_add_state(label_alarm_angle, STATE_DISABLED);
-        btn_group_enable(&alarm_state, false);
+        slider_enable(&slider_group, enabled);
 
-        lv_obj_clear_flag(pp_headtracker.p_arr.panel[1], FLAG_SELECTABLE);
-        lv_obj_clear_flag(pp_headtracker.p_arr.panel[2], FLAG_SELECTABLE);
-        lv_obj_clear_flag(pp_headtracker.p_arr.panel[3], FLAG_SELECTABLE);
-        lv_obj_clear_flag(pp_headtracker.p_arr.panel[4], FLAG_SELECTABLE);
+        for (int r = ROW_CALIBRATE; r <= ROW_MAX_ANGLE; ++r) {
+            if (enabled)
+                lv_obj_add_flag(arr->panel[r], FLAG_SELECTABLE);
+            else
+                lv_obj_clear_flag(arr->panel[r], FLAG_SELECTABLE);
+        }
+    } else {
+        btn_group_enable(&alarm_state, enabled);
+
+        if (enabled && alarm_on)
+            lv_obj_clear_state(label_alarm_angle, STATE_DISABLED);
+        else
+            lv_obj_add_state(label_alarm_angle, STATE_DISABLED);
+
+        if (enabled)
+            lv_obj_add_flag(arr->panel[ROW_ALARM_STATE], FLAG_SELECTABLE);
+        else
+            lv_obj_clear_flag(arr->panel[ROW_ALARM_STATE], FLAG_SELECTABLE);
+        if (enabled && alarm_on)
+            lv_obj_add_flag(arr->panel[ROW_ALARM_ANGLE], FLAG_SELECTABLE);
+        else
+            lv_obj_clear_flag(arr->panel[ROW_ALARM_ANGLE], FLAG_SELECTABLE);
+        lv_obj_clear_flag(arr->panel[ROW_MAX_ANGLE], FLAG_SELECTABLE);
     }
 
     // hiding and showing elements
     switch (page) {
     case PAGE1:
         // show page 1
-        btn_group_show(&btn_group, true);
         slider_show(&slider_group, true);
         lv_obj_clear_flag(label_cali, LV_OBJ_FLAG_HIDDEN);
         lv_obj_clear_flag(label_center, LV_OBJ_FLAG_HIDDEN);
@@ -106,7 +116,6 @@ static void update_visibility(uint8_t page) {
 
     case PAGE2:
         // hide page 1
-        btn_group_show(&btn_group, false);
         slider_show(&slider_group, false);
         lv_obj_add_flag(label_cali, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(label_center, LV_OBJ_FLAG_HIDDEN);
@@ -118,16 +127,13 @@ static void update_visibility(uint8_t page) {
         break;
     }
 
-    // Pill look: rows 3 and 4 hold nothing on the alarm page, so they get no card.
+    // Pill look: the Max Angle row holds nothing on the alarm page, so it gets no card.
     if (ui_theme_pills()) {
-        const uint32_t empty_rows = (1u << 3) | (1u << 4);
-        pp_headtracker.p_arr.no_card = (page == PAGE2) ? empty_rows : 0;
-        for (int r = 3; r <= 4; ++r) {
-            if (page == PAGE2)
-                lv_obj_add_flag(pp_headtracker.p_arr.panel[r], LV_OBJ_FLAG_HIDDEN);
-            else
-                lv_obj_clear_flag(pp_headtracker.p_arr.panel[r], LV_OBJ_FLAG_HIDDEN);
-        }
+        arr->no_card = (page == PAGE2) ? (1u << ROW_MAX_ANGLE) : 0;
+        if (page == PAGE2)
+            lv_obj_add_flag(arr->panel[ROW_MAX_ANGLE], LV_OBJ_FLAG_HIDDEN);
+        else
+            lv_obj_clear_flag(arr->panel[ROW_MAX_ANGLE], LV_OBJ_FLAG_HIDDEN);
     }
 }
 
@@ -170,12 +176,14 @@ static lv_obj_t *page_headtracker_create(lv_obj_t *parent, panel_arr_t *arr) {
 
     create_select_item(arr, cont);
 
-    create_btn_group_item(&page_select, cont, 2, _lang("Page"), _lang("Tracking"), _lang("Tilt Alarm"), "", "", 0);
+    // rows shared by both pages
+    create_btn_group_item(&btn_group, cont, 2, _lang("Tracking"), _lang("On"), _lang("Off"), "", "", ROW_TRACKING);
+    create_btn_group_item(&page_select, cont, 2, _lang("Page"), _lang("Tracking"), _lang("Tilt Alarm"), "", "", ROW_PAGE);
 
     // page 2 items
-    create_btn_group_item(&alarm_state, cont, 3, _lang("Alarm"), _lang("Off"), _lang("Video"), _lang("Arm"), "", 1);
+    create_btn_group_item(&alarm_state, cont, 3, _lang("Alarm"), _lang("Off"), _lang("Video"), _lang("Arm"), "", ROW_ALARM_STATE);
 
-    label_alarm_angle = create_label_item(cont, _lang("Set Alarm Angle"), 1, 2, 1);
+    label_alarm_angle = create_label_item(cont, _lang("Set Alarm Angle"), 1, ROW_ALARM_ANGLE, 1);
     lv_obj_clear_flag(label_alarm_angle, LV_OBJ_FLAG_SCROLLABLE);
 
     // preload page 2 items
@@ -183,17 +191,15 @@ static lv_obj_t *page_headtracker_create(lv_obj_t *parent, panel_arr_t *arr) {
     lv_obj_add_state(label_alarm_angle, STATE_DISABLED);
 
     // page 1 items
-    create_btn_group_item(&btn_group, cont, 2, _lang("Tracking"), _lang("On"), _lang("Off"), "", "", 1);
+    label_cali = create_label_item(cont, _lang("Calibrate"), 1, ROW_CALIBRATE, 1);
 
-    label_cali = create_label_item(cont, _lang("Calibrate"), 1, 2, 1);
+    label_center = create_label_item(cont, _lang("Set Center"), 1, ROW_SET_CENTER, 1);
 
-    label_center = create_label_item(cont, _lang("Set Center"), 1, 3, 1);
-
-    create_slider_item(&slider_group, cont, _lang("Max Angle"), 360, g_setting.ht.max_angle, 4);
+    create_slider_item(&slider_group, cont, _lang("Max Angle"), 360, g_setting.ht.max_angle, ROW_MAX_ANGLE);
     lv_slider_set_range(slider_group.slider, 0, 360);
 
     snprintf(buf, sizeof(buf), "< %s", _lang("Back"));
-    create_label_item(cont, buf, 1, 5, 1);
+    create_label_item(cont, buf, 1, ROW_BACK, 1);
 
     btn_group_set_sel(&btn_group, !g_setting.ht.enable);
     btn_group_set_sel(&alarm_state, g_setting.ht.alarm_state);
@@ -318,26 +324,16 @@ static void page_headtracker_on_roller(uint8_t key) {
 
 static void page_headtracker_on_click_page1(uint8_t key, int sel) {
     char buf[64];
-    if (sel == 1) {
-        btn_group_toggle_sel(&btn_group);
-        g_setting.ht.enable = btn_group_get_sel(&btn_group) == 0;
-        settings_put_bool("ht", "enable", g_setting.ht.enable);
-        if (g_setting.ht.enable)
-            ht_enable();
-        else
-            ht_disable();
-
-        update_visibility(curr_page);
-    } else if (sel == 2) {
+    if (sel == ROW_CALIBRATE) {
         snprintf(buf, sizeof(buf), "%s...", _lang("Calibrating"));
         lv_label_set_text(label_cali, buf);
         lv_timer_handler();
         ht_calibrate();
         lv_label_set_text(label_cali, _lang("Re-calibrate"));
         lv_timer_handler();
-    } else if (sel == 3) {
+    } else if (sel == ROW_SET_CENTER) {
         ht_set_center_position();
-    } else if (sel == 4) {
+    } else if (sel == ROW_MAX_ANGLE) {
         if (angle_slider_selected) {
             page_headtracker_exit_slider();
         } else {
@@ -350,11 +346,11 @@ static void page_headtracker_on_click_page1(uint8_t key, int sel) {
 
 static void page_headtracker_on_click_page2(uint8_t key, int sel) {
     char buf[64];
-    if (sel == 1) {
+    if (sel == ROW_ALARM_STATE) {
         btn_group_toggle_sel(&alarm_state);
         g_setting.ht.alarm_state = btn_group_get_sel(&alarm_state);
         ini_putl("ht", "alarm_state", g_setting.ht.alarm_state, SETTING_INI);
-    } else if (sel == 2) {
+    } else if (sel == ROW_ALARM_ANGLE) {
         snprintf(buf, sizeof(buf), "%s...", "Updating Angle");
         lv_label_set_text(label_alarm_angle, buf);
         set_alarm_angle_timer = lv_timer_create(page_headtracker_set_alarm_angle_timer_cb, 1000, NULL);
@@ -364,7 +360,15 @@ static void page_headtracker_on_click_page2(uint8_t key, int sel) {
 }
 
 static void page_headtracker_on_click(uint8_t key, int sel) {
-    if (sel == 0) {
+    if (sel == ROW_TRACKING) {
+        btn_group_toggle_sel(&btn_group);
+        g_setting.ht.enable = btn_group_get_sel(&btn_group) == 0;
+        settings_put_bool("ht", "enable", g_setting.ht.enable);
+        if (g_setting.ht.enable)
+            ht_enable();
+        else
+            ht_disable();
+    } else if (sel == ROW_PAGE) {
         btn_group_toggle_sel(&page_select);
         int page_select_btn = btn_group_get_sel(&page_select);
         LOGD("page_select: %d", btn_group_get_sel(&page_select));
@@ -373,15 +377,15 @@ static void page_headtracker_on_click(uint8_t key, int sel) {
         } else if (page_select_btn == 1) {
             curr_page = PAGE2;
         }
-        update_visibility(curr_page);
-    }
-    switch (curr_page) {
-    case PAGE1:
-        page_headtracker_on_click_page1(key, sel);
-        break;
-    case PAGE2:
-        page_headtracker_on_click_page2(key, sel);
-        break;
+    } else {
+        switch (curr_page) {
+        case PAGE1:
+            page_headtracker_on_click_page1(key, sel);
+            break;
+        case PAGE2:
+            page_headtracker_on_click_page2(key, sel);
+            break;
+        }
     }
 
     update_visibility(curr_page);
