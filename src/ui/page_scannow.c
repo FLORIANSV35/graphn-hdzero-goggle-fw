@@ -28,6 +28,7 @@
 #include "driver/uart.h"
 #include "lang/language.h"
 #include "ui/page_common.h"
+#include "ui/page_tools.h"
 #include "ui/ui_main_menu.h"
 #include "ui/ui_style.h"
 
@@ -480,10 +481,21 @@ static void set_results_widget_visibility(void) {
 }
 #endif
 
+static lv_obj_t *scan_page_obj;
+
+// Tools > Scan Page = RSSI Scanner: the page opens the scanner instead, so
+// its own content (mode buttons, results, status) is not shown at all.
+void page_scannow_apply_page_mode(void) {
+    if (scan_page_obj)
+        lv_obj_set_style_opa(scan_page_obj,
+                             tools_scan_page_is_rssi() ? LV_OPA_TRANSP : LV_OPA_COVER, 0);
+}
+
 static lv_obj_t *page_scannow_create(lv_obj_t *parent, panel_arr_t *arr) {
     char buf[256];
 
     lv_obj_t *page = lv_menu_page_create(parent, NULL);
+    scan_page_obj = page;
     lv_obj_clear_flag(page, LV_OBJ_FLAG_SCROLLABLE);
     lv_obj_set_size(page, UI_PAGE_VIEW_SIZE);
     lv_obj_add_style(page, &style_scan, LV_PART_MAIN);
@@ -702,6 +714,7 @@ static lv_obj_t *page_scannow_create(lv_obj_t *parent, panel_arr_t *arr) {
     lv_obj_add_flag(exit_note, LV_OBJ_FLAG_HIDDEN);
 #endif
 
+    page_scannow_apply_page_mode();
     return page;
 }
 
@@ -1214,6 +1227,16 @@ void page_scannow_set_boot_scan_mode(int mode) {
 }
 
 static void page_scannow_enter() {
+    // Tools > Scan Page = RSSI Scanner: this entry opens the scanner instead.
+    // The boot auto-scan loop and the sidebar preview also call enter(); only
+    // a real click into the page (SUBMENU) starts it.
+    if (tools_scan_page_is_rssi()) {
+        if (!g_autoscan_exit)
+            g_autoscan_exit = true; // end the boot loop, nothing to scan
+        else if (g_app_state == APP_STATE_SUBMENU)
+            tools_rssi_scan_open();
+        return;
+    }
     page_focused = true;
     // Boot-time Auto Scan re-enters this page in a loop until a signal is
     // found; scan immediately instead of parking on the picker.
@@ -1253,6 +1276,10 @@ static void page_scannow_enter() {
 // scan RESULTS, return to the IDLE mode-picker instead of leaving the page,
 // so the user can re-scan in a different mode without re-navigating the menu.
 static bool page_scannow_on_back(void) {
+    if (tools_rssi_scan_active()) {
+        tools_rssi_scan_close();
+        return false; // leave the page
+    }
     if (page_state == SCAN_PAGE_RESULTS) {
 #if SCAN_MODE_COUNT > 1
         // Tear down analog RX the same way exit would, so a subsequent IDLE
@@ -1284,6 +1311,10 @@ static bool page_scannow_on_back(void) {
 #endif
 
 static void page_scannow_exit() {
+    if (tools_rssi_scan_active()) {
+        tools_rssi_scan_close();
+        return;
+    }
 #if defined(HDZBOXPRO) || defined(HDZGOGGLE2) || defined(HDZGOGGLE)
     if (page_state == SCAN_PAGE_RESULTS &&
         (scan_mode == SCAN_MODE_ANALOG || scan_mode == SCAN_MODE_AUTO)) {
@@ -1315,6 +1346,8 @@ static void page_scannow_exit() {
 }
 
 static void page_scannow_on_roller(uint8_t key) {
+    if (tools_scan_page_is_rssi())
+        return;
 #if defined(HDZBOXPRO) || defined(HDZGOGGLE2) || defined(HDZGOGGLE)
     if (page_state == SCAN_PAGE_IDLE) {
         // Cycle the picker: modes 0..SCAN_MODE_COUNT-1, then "Choose from Last
@@ -1376,6 +1409,12 @@ static void page_scannow_on_roller(uint8_t key) {
 }
 
 static void page_scannow_on_click(uint8_t key, int sel) {
+    if (tools_scan_page_is_rssi()) {
+        // Any click dismisses the scanner and returns to the sidebar.
+        tools_rssi_scan_close();
+        submenu_exit();
+        return;
+    }
 #if defined(HDZBOXPRO) || defined(HDZGOGGLE2) || defined(HDZGOGGLE)
     if (page_state == SCAN_PAGE_IDLE) {
         if (idle_sel == SCAN_MODE_COUNT) {
@@ -1469,7 +1508,7 @@ static void page_scannow_on_click(uint8_t key, int sel) {
 }
 
 page_pack_t pp_scannow = {
-    .name = "Scan Now",
+    .name = "Scan",
     .create = page_scannow_create,
     .enter = page_scannow_enter,
     .exit = page_scannow_exit,

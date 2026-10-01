@@ -19,6 +19,8 @@ int scan(void);
 int scan_reinit(void);
 void autoscan_exit(void);
 void page_scannow_set_channel_label(void);
+// Show/hide the page content per Tools > Scan Page (RSSI Scanner hides it).
+void page_scannow_apply_page_mode(void);
 // Preset the protocol the boot-time Auto Scan runs in (scan_mode_t value:
 // 0=HDZero, 1=Analog, 2=Dual). Out-of-range values for the target (the G1
 // only scans HDZero) are ignored. Does not touch the persisted picker default.

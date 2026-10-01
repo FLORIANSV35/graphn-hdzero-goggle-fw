@@ -15,6 +15,7 @@
 #include "driver/nct75.h"
 #include "driver/rtc6715.h"
 #include "lang/language.h"
+#include "ui/page_scannow.h"
 #include "ui/ui_porting.h"
 #include "ui/ui_style.h"
 #include "ui/ui_theme.h"
@@ -37,17 +38,18 @@
 #define ROW_RSSI_SCAN   2
 #define ROW_RSSI_RANGE  3
 #define ROW_RSSI_STEP   4
-#define ROW_TEMPERATURE 5
+#define ROW_SCAN_PAGE   5
+#define ROW_TEMPERATURE 6
 #ifndef HDZBOXPRO
-#define ROW_THEME    6
-#define ROW_SWATCHES 7
-#define ROW_BACK     8
-#define TOOLS_ROW_COUNT 9
+#define ROW_THEME    7
+#define ROW_SWATCHES 8
+#define ROW_BACK     9
+#define TOOLS_ROW_COUNT 10
 #else
 // Box Pro never offered the Theme page (ui_main_menu.c used to gate it out
 // with #if !defined(HDZBOXPRO)); keep that behaviour here.
-#define ROW_BACK        6
-#define TOOLS_ROW_COUNT 7
+#define ROW_BACK        7
+#define TOOLS_ROW_COUNT 8
 #endif
 #else
 #define ROW_TEMPERATURE 2
@@ -59,7 +61,7 @@
 
 #ifdef RSSI_SCAN_ANALOG
 #define TOOLS_NOTE_ACTIONS \
-    "Click Focus Chart, Frequency Chart or RSSI Scanner to display it fullscreen, click again to dismiss."
+    "Click Focus Chart, Frequency Chart or RSSI Scanner to display it fullscreen, click again to dismiss. Scan Page makes the Scan entry open the RSSI Scanner."
 #else
 #define TOOLS_NOTE_ACTIONS "Click Focus Chart or Frequency Chart to display it fullscreen, click again to dismiss."
 #endif
@@ -69,7 +71,15 @@
 #define RSSI_SCAN_CH_MAX 300 // 48 channels, or up to (5945-5361)/2+1 = 293 points in 2 MHz mode
 
 static lv_coord_t col_dsc[] = {160, 160, 160, 160, 160, 160, LV_GRID_TEMPLATE_LAST};
-static lv_coord_t row_dsc[] = {60, 60, 60, 60, 60, 60, 60, 60, 60, 60, 60, LV_GRID_TEMPLATE_LAST};
+// Thin rows (same as Record Option) so the rows and the note below them fit.
+#ifdef HDZBOXPRO
+#define TOOLS_ROW_H 32
+#else
+#define TOOLS_ROW_H 50
+#endif
+#define H TOOLS_ROW_H
+static lv_coord_t row_dsc[] = {H, H, H, H, H, H, H, H, H, H, H, H, LV_GRID_TEMPLATE_LAST};
+#undef H
 
 static lv_obj_t *chart_img;
 static bool chart_open;
@@ -98,6 +108,9 @@ static int rssi_scan_idx;
 enum { RSSI_RANGE_FULL = 0, RSSI_RANGE_LOWBAND, RSSI_RANGE_STANDARD, RSSI_RANGE_COUNT };
 static const char *const rssi_range_name[RSSI_RANGE_COUNT] = {"Full", "Lowband", "Standard"};
 static int rssi_range_mode;
+// What the Scan page does: its normal scan, or open the RSSI Scanner instead.
+static bool scan_page_rssi;
+static lv_obj_t *scan_page_label;
 static lv_obj_t *rssi_range_label;
 
 // Sweep step: one point per analog channel, or a free sweep at a fixed step.
@@ -465,6 +478,12 @@ static lv_obj_t *page_tools_create(lv_obj_t *parent, panel_arr_t *arr) {
     snprintf(buf, sizeof(buf), "< %s >", _lang(rssi_range_name[rssi_range_mode]));
     lv_label_set_text(rssi_range_label, buf);
 
+    scan_page_rssi = ini_getl("tools", "scan_page", 0, SETTING_INI) != 0;
+    create_label_item(cont, _lang("Scan Page"), 1, ROW_SCAN_PAGE, 2);
+    scan_page_label = create_label_item(cont, "", 3, ROW_SCAN_PAGE, 3);
+    snprintf(buf, sizeof(buf), "< %s >", scan_page_rssi ? _lang("RSSI Scanner") : _lang("Scan"));
+    lv_label_set_text(scan_page_label, buf);
+
     rssi_step_mode = (int)ini_getl("tools", "rssi_step", RSSI_STEP_CHANNELS, SETTING_INI);
     if (rssi_step_mode < 0 || rssi_step_mode >= RSSI_STEP_COUNT)
         rssi_step_mode = RSSI_STEP_CHANNELS;
@@ -488,7 +507,7 @@ static lv_obj_t *page_tools_create(lv_obj_t *parent, panel_arr_t *arr) {
     int note_row = TOOLS_ROW_COUNT;
     // Wider than buf: the combined note sentences run past 128 bytes and
     // snprintf into the shared buf silently truncated mid-sentence.
-    char note_buf[256];
+    char note_buf[512];
 
 #ifndef HDZBOXPRO
     // Row 3 (colour swatches) is decorative, not a real entry.
@@ -627,6 +646,37 @@ static lv_obj_t *page_tools_create(lv_obj_t *parent, panel_arr_t *arr) {
     return page;
 }
 
+// Scan page hooks: with "Scan Page" set to RSSI Scanner, the Scan sidebar
+// entry opens the scanner overlay instead of running a scan.
+bool tools_scan_page_is_rssi(void) {
+#ifdef RSSI_SCAN_ANALOG
+    return scan_page_rssi;
+#else
+    return false;
+#endif
+}
+
+bool tools_rssi_scan_active(void) {
+#ifdef RSSI_SCAN_ANALOG
+    return rssi_scan_active;
+#else
+    return false;
+#endif
+}
+
+void tools_rssi_scan_open(void) {
+#ifdef RSSI_SCAN_ANALOG
+    if (!rssi_scan_active)
+        start_rssi_scan();
+#endif
+}
+
+void tools_rssi_scan_close(void) {
+#ifdef RSSI_SCAN_ANALOG
+    stop_rssi_scan();
+#endif
+}
+
 static void page_tools_exit(void) {
     hide_chart();
 #ifdef RSSI_SCAN_ANALOG
@@ -665,6 +715,15 @@ static void page_tools_on_click(uint8_t key, int sel) {
         ini_putl("tools", "rssi_step", rssi_step_mode, SETTING_INI);
         snprintf(buf, sizeof(buf), "< %s >", _lang(rssi_step_name[rssi_step_mode]));
         lv_label_set_text(rssi_step_label, buf);
+        break;
+    }
+    case ROW_SCAN_PAGE: {
+        char buf[32];
+        scan_page_rssi = !scan_page_rssi;
+        ini_putl("tools", "scan_page", scan_page_rssi, SETTING_INI);
+        snprintf(buf, sizeof(buf), "< %s >", scan_page_rssi ? _lang("RSSI Scanner") : _lang("Scan"));
+        lv_label_set_text(scan_page_label, buf);
+        page_scannow_apply_page_mode();
         break;
     }
     case ROW_RSSI_RANGE: {
