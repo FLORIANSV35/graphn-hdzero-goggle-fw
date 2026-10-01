@@ -49,10 +49,10 @@ enum {
 
     ROW_BOXPRO_ANALOG_MODULE = -2,
     ROW_BOXPRO_ANALOG_VIDEO = -1,
-    // Auto Detect is the headline source -- list it first, above HDZero.
-    ROW_BOXPRO_AUTO_DETECT = 0,
-    ROW_BOXPRO_HDZERO,
+    // HDZero and Analog first, then Auto (Auto Detect).
+    ROW_BOXPRO_HDZERO = 0,
     ROW_BOXPRO_ANALOG,
+    ROW_BOXPRO_AUTO_DETECT,
     ROW_BOXPRO_HDMI,
     ROW_BOXPRO_AV,
     // No HDZ Band row: Race/Low is no longer a user toggle on BoxPro. The
@@ -67,10 +67,10 @@ enum {
 };
 
 enum {
-    // Auto Detect is the headline source -- list it first, above HDZero.
-    ROW_GOGGLE2_AUTO_DETECT = 0,
-    ROW_GOGGLE2_HDZERO,
+    // HDZero and Analog first, then Auto (Auto Detect).
+    ROW_GOGGLE2_HDZERO = 0,
     ROW_GOGGLE2_ANALOG,
+    ROW_GOGGLE2_AUTO_DETECT,
     ROW_GOGGLE2_HDMI,
     ROW_GOGGLE2_AV,
     ROW_GOGGLE2_HDZ_WIDTH,
@@ -155,18 +155,16 @@ static lv_obj_t *page_source_create(lv_obj_t *parent, panel_arr_t *arr) {
 
     create_select_item(arr, cont);
 
-#if defined(HDZBOXPRO) || defined(HDZGOGGLE2)
-    // Created first so creation order matches the grid row order (Auto Detect
-    // is row 0, the top of the menu).
-    // User-facing name is "Auto" (matches the Scan Now picker and the
-    // R1/Dual channel tags); internally this stays auto_detect everywhere.
-    auto_detect_label = create_label_item(cont, _lang("Auto"),
-                                          1, ROW_AUTO_DETECT, 3);
-#endif
-
     label[0] = create_label_item(cont, "HDZero", 1, ROW_HDZERO, 3);
     snprintf(buf, sizeof(buf), "%s", _lang("Analog"));
     label[1] = create_label_item(cont, buf, 1, ROW_ANALOG, 3);
+#if defined(HDZBOXPRO) || defined(HDZGOGGLE2)
+    // Created in grid row order (HDZero, Analog, Auto). User-facing name is
+    // "Auto" (matches the Scan Now picker and the R1/Dual channel tags);
+    // internally this stays auto_detect everywhere.
+    auto_detect_label = create_label_item(cont, _lang("Auto"),
+                                          1, ROW_AUTO_DETECT, 3);
+#endif
     snprintf(buf, sizeof(buf), "HDMI %s", _lang("In"));
     label[2] = create_label_item(cont, buf, 1, ROW_HDMI, 3);
     snprintf(buf, sizeof(buf), "AV %s", _lang("In"));
