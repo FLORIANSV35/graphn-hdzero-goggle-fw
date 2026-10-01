@@ -22,6 +22,7 @@ extern "C" {
 #define REC_CONF      "/mnt/app/app/record/confs/record.conf"
 #define WIFI_DOWNLOAD "/mnt/app/script/online_downloader.sh"
 #define WIFI_OFF      "/mnt/app/script/wlan_stop.sh"
+#define WIFI_PORTAL   "/mnt/app/portal/portal.sh"
 #define WIFI_AP_ON    "/tmp/wlan_start_ap.sh"
 #define WIFI_STA_ON   "/tmp/wlan_start_sta.sh"
 #define WIFI_AP_CFG   "/tmp/hostapd.conf"

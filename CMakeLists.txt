@@ -267,6 +267,27 @@ if(NOT EMULATOR_BUILD)
 		ffmpeg
 	)
 
+	# tsproxy: hardware transcode test (decode with the goggle's video decoder, re-encode with its
+	# encoder at a lower frame rate / bit rate); stage 1, see src/tsproxy/main.c
+	add_executable(tsproxy
+		src/tsproxy/main.c
+	)
+	target_include_directories(tsproxy PRIVATE
+		src/player
+
+		lib/linux/include
+		lib/linux/include/video
+		lib/linux/include/media
+	)
+	target_link_libraries(tsproxy PRIVATE
+		${STANDARD_LIBRARIES}
+
+		log
+		minIni
+		ffmpeg
+		softwinner
+	)
+
 	# rtspLive application
 	file(GLOB SRC_FILES_RTSPLIVE "src/rtspLive/*.cpp" "src/rtspLive/*.hh")
 	file(GLOB SRC_FILES_RTSPLIVE_STREAM "src/rtspLive/stream/*.c" "src/rtspLive/stream/*.h")
@@ -312,8 +333,9 @@ if(NOT EMULATOR_BUILD)
 		COMMAND cp record ${RECORD_APP_PATH}
 		COMMAND cp rtspLive ${RECORD_APP_PATH}
 		COMMAND cp ts2mp4 ${RECORD_APP_PATH}
+		COMMAND cp tsproxy ${RECORD_APP_PATH}
 		COMMAND cd ${CMAKE_CURRENT_BINARY_DIR} && ./mkapp/mkapp_ota.sh
-		DEPENDS MKAPP ${PROJECT_NAME} record rtspLive ts2mp4
+		DEPENDS MKAPP ${PROJECT_NAME} record rtspLive ts2mp4 tsproxy
 	)
 	add_custom_target(${PROJECT_NAME}-OTA ALL
 		DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/out/${PROJECT_NAME}

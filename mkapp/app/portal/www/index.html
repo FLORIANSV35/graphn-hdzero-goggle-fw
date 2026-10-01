@@ -1,0 +1,734 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<title>HDZero Goggle</title>
+<link rel="icon" href="/logo.png">
+<style>
+  :root { --bg:#0e0f12; --panel:#181a1f; --line:#2a2d35; --text:#ecedf0; --dim:#8c909c; --accent:#e51000; --star:#ffc83c; color-scheme:dark; }
+  * { box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  html { -webkit-text-size-adjust:100%; }
+  body { margin:0; background:var(--bg); color:var(--text); font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+         padding-left:env(safe-area-inset-left); padding-right:env(safe-area-inset-right); padding-bottom:env(safe-area-inset-bottom); }
+  header { padding:10px 16px; border-bottom:1px solid var(--line); display:flex; align-items:center; gap:12px; }
+  header img { height:34px; width:auto; display:block; }
+  h1 { margin:0; font-size:19px; }
+  header span { color:var(--dim); font-size:13px; }
+  #build { margin-left:auto; font-size:11px; opacity:.7; }
+  main { padding:12px 58px 12px 12px; max-width:1000px; margin:0 auto; }
+  .dim { color:var(--dim); font-size:14px; }
+
+  /* player: stays at the top while the list scrolls underneath */
+  #player { display:none; position:sticky; top:0; z-index:5; background:var(--bg); padding:8px 0 10px; margin:0 -58px 0 -12px; padding-left:12px; padding-right:58px; border-bottom:1px solid var(--line); }
+  #player.on { display:block; }
+  video { width:100%; max-height:48vh; background:#000; border-radius:10px; aspect-ratio:16/9; display:block; }
+  .bar { height:8px; border-radius:4px; background:#2a2d35; overflow:hidden; margin-top:8px; }
+  .bar > div { height:100%; width:0; background:var(--accent); transition:width .4s; }
+  #nowplaying { margin-top:6px; word-break:break-all; }
+  .alert { margin-top:8px; padding:10px 12px; border-radius:10px; background:#3a1612; border:1px solid var(--accent); color:#ffd9d4; font-size:14px; }
+  #origbtn { background:#22252c; border:1px solid var(--line); }
+  .alert .btn.alt { background:#22252c; border-color:var(--line); color:var(--text); font-weight:500; }
+  .alert .btn { margin-top:8px; width:100%; background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  #playerr { margin-top:4px; font-size:14px; word-break:break-word; white-space:pre-line; }
+
+  .filter { display:flex; gap:8px; margin:12px 0 4px; }
+  .filter button { flex:1; min-height:44px; padding:8px 12px; border-radius:22px; border:1px solid var(--line); background:var(--panel); color:var(--dim); font:inherit; font-size:15px; cursor:pointer; }
+  .filter button.on { background:var(--accent); border-color:var(--accent); color:#fff; font-weight:600; }
+  .speed { margin:8px 0 4px; display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  #err { color:#ff7a7a; font-size:14px; margin-top:6px; }
+
+  /* date index on the right, like the Playback page: months, then days */
+  #days { position:fixed; right:0; top:var(--pl, 0px); bottom:0; width:46px; z-index:4; overflow-y:auto; scrollbar-width:none; padding:6px 0 12px;
+          background:linear-gradient(to left, rgba(14,15,18,.96), rgba(14,15,18,.75)); }
+  #days::-webkit-scrollbar { display:none; }
+  #days .mo { color:var(--dim); font-size:10px; font-weight:600; text-align:center; margin-top:10px; }
+  #days button { display:block; width:100%; min-height:34px; background:none; border:0; border-right:3px solid transparent; color:var(--text); font:inherit; font-size:14px; cursor:pointer; }
+  #days button.on { color:#ff4a3a; border-right-color:var(--accent); font-weight:700; }
+  #days:empty { display:none; }
+  li { scroll-margin-top:calc(var(--pl, 0px) + 10px); }
+
+  /* clips: one card each, several columns on a wide screen */
+  ul { list-style:none; margin:12px 0 0; padding:0; display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:12px; }
+  li { background:var(--panel); border:1px solid var(--line); border-radius:12px; overflow:hidden; display:flex; flex-direction:column; }
+  li .tw { position:relative; aspect-ratio:16/9; background:#000; cursor:pointer; }
+  li .thumb { width:100%; height:100%; object-fit:cover; display:block; }
+  li .play-ico { position:absolute; inset:0; margin:auto; width:52px; height:52px; border-radius:50%; background:rgba(0,0,0,.55); border:2px solid rgba(255,255,255,.85);
+                 display:flex; align-items:center; justify-content:center; pointer-events:none; }
+  li .play-ico::after { content:""; margin-left:4px; border-style:solid; border-width:10px 0 10px 17px; border-color:transparent transparent transparent #fff; }
+  li .lt { position:absolute; left:8px; bottom:6px; padding:1px 6px; border-radius:6px; background:rgba(0,0,0,.65); color:#fff; font-size:11px; font-weight:600; pointer-events:none; }
+  li .star { position:absolute; top:8px; left:10px; color:var(--star); font-size:22px; text-shadow:0 0 4px #000, 0 0 4px #000; pointer-events:none; }
+  li .info { padding:10px 12px 4px; min-width:0; }
+  li .name { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  li .meta { color:var(--dim); font-size:13px; margin-top:2px; }
+  li .meta .dt::before { content:'  -  '; white-space:pre; }
+  li .actions { display:flex; gap:8px; padding:8px 12px 12px; }
+  .btn { flex:1; min-height:44px; display:inline-flex; align-items:center; justify-content:center; padding:8px 12px; border-radius:10px; border:1px solid var(--line);
+         background:#22252c; color:var(--text); text-decoration:none; font:inherit; font-size:15px; cursor:pointer; }
+  .btn.play { background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600; }
+  .speed .btn { flex:none; min-height:40px; }
+
+  .btn .ico { display:none; }
+  #player.convonly video { display:none; }
+  #player.convonly { padding-bottom:8px; }
+  /* phone: two clips per row, compact cards */
+  @media (max-width:600px) {
+    ul { grid-template-columns:repeat(2, minmax(0, 1fr)); gap:8px; }
+    li { border-radius:10px; }
+    li .play-ico { width:38px; height:38px; border-width:2px; }
+    li .play-ico::after { margin-left:3px; border-width:7px 0 7px 12px; }
+    li .star { top:5px; left:6px; font-size:17px; }
+    li .info { padding:7px 8px 2px; }
+    li .name { font-size:13px; }
+    li .meta { font-size:11px; line-height:1.3; }
+    li .meta span { display:block; }
+    li .meta .dt::before { content:''; }
+    li .actions { padding:6px 8px 8px; gap:6px; }
+    .btn { min-height:40px; padding:6px 8px; font-size:14px; }
+    li .btn.dl { flex:0 0 42px; padding:0; }
+    li .btn.dl .lbl { display:none; }
+    li .btn.dl .ico { display:inline; font-size:18px; line-height:1; }
+    li .btn.conv { flex:0 0 58px; }
+    li .btn.conv .ico { font-size:13px; font-weight:700; letter-spacing:.3px; }
+  }
+  @media (max-width:480px) { main { padding:10px 54px 10px 10px; } #player { margin:0 -54px 0 -10px; padding-left:10px; padding-right:54px; } }
+</style>
+</head>
+<body>
+<header><img src="/logo.png" alt="HDZero"><h1>HDZero Goggle</h1><span id="host"></span><span id="build" class="dim">__BUILD__</span></header>
+<main>
+  <section id="vids">
+    <div id="player">
+      <video id="vidv" controls playsinline></video>
+      <div class="dim" id="nowplaying"></div>
+      <button class="btn alt" id="origbtn" hidden style="margin-top:8px;width:100%">Play the original instead</button>
+      <div class="alert" id="alert" hidden>
+        <div id="alerttxt"></div>
+        <button class="btn alt" id="alertlight">Make a light copy</button>
+        <a class="btn" id="alertdl" download>Download this clip</a>
+      </div>
+      <div class="bar" id="bar" hidden><div id="barfill"></div></div>
+      <div id="playerr" class="dim"></div>
+    </div>
+    <div class="filter">
+      <button id="f-all" class="on">All</button>
+      <button id="f-fav">&#9733; Favorites</button>
+    </div>
+    <div class="speed">
+      <button class="btn" id="speedbtn">Test link speed</button>
+      <span class="dim" id="speed"></span>
+    </div>
+    <div id="err"></div>
+    <ul id="list"></ul>
+    <p class="dim" id="empty" hidden>No video on the SD card.</p>
+  </section>
+</main>
+<nav id="days" aria-label="Dates"></nav>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var host = location.hostname || "192.168.2.1";
+  $("host").textContent = host;
+  if (/^__/.test($("build").textContent)) $("build").textContent = "";   // not stamped (a test copy)
+
+  function size(n) {
+    if (n >= 1073741824) return (n / 1073741824).toFixed(2) + " GB";
+    return Math.max(1, Math.round(n / 1048576)) + " MB";
+  }
+  // When a clip was recorded: the YYYYMMDD-HHMMSS in its name when it has one,
+  // else the date ls printed ("Sep 14 00:53", or "Sep 14  2025" for old files).
+  var MONTHS = { Jan: 1, Feb: 2, Mar: 3, Apr: 4, May: 5, Jun: 6, Jul: 7, Aug: 8, Sep: 9, Oct: 10, Nov: 11, Dec: 12 };
+  function two(n) { return (n < 10 ? "0" : "") + n; }
+  function when(name, ls) {
+    var m = /^(?:hot_)?(\d{4})(\d\d)(\d\d)-(\d\d)(\d\d)(\d\d)/.exec(name);
+    if (m) return m[1] + "-" + m[2] + "-" + m[3] + "  " + m[4] + ":" + m[5] + ":" + m[6];
+    var p = /^(\w{3})\s+(\d+)\s+(\S+)$/.exec((ls || "").trim());
+    if (!p || !MONTHS[p[1]]) return "";
+    var now = new Date(), mon = MONTHS[p[1]], day = +p[2];
+    if (p[3].indexOf(":") < 0) return p[3] + "-" + two(mon) + "-" + two(day);
+    var year = now.getFullYear();
+    if (new Date(year, mon - 1, day) > new Date(now.getTime() + 2 * 86400000)) year--; // ls omits the year for the last 6 months
+    return year + "-" + two(mon) + "-" + two(day) + "  " + p[3];
+  }
+
+  // Same date as when(), as a number to sort on (0 when unknown).
+  function stamp(name, ls) {
+    var m = /^(?:hot_)?(\d{4})(\d\d)(\d\d)-(\d\d)(\d\d)(\d\d)/.exec(name);
+    if (m) return new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6]).getTime();
+    var p = /^(\w{3})\s+(\d+)\s+(\S+)$/.exec((ls || "").trim());
+    if (!p || !MONTHS[p[1]]) return 0;
+    var mon = MONTHS[p[1]] - 1, day = +p[2];
+    if (p[3].indexOf(":") < 0) return new Date(+p[3], mon, day).getTime();
+    var hm = p[3].split(":"), now = new Date(), year = now.getFullYear();
+    if (new Date(year, mon, day) > new Date(now.getTime() + 2 * 86400000)) year--;
+    return new Date(year, mon, day, +hm[0], +hm[1]).getTime();
+  }
+
+  // URL of a clip (or of a file next to it, ext = ".jpg"): favourites live in Favorites/
+  function clipUrl(it, ext) {
+    var n = ext ? it.n.replace(/\.[^.]+$/, "") + ext : it.n;
+    return "/dvr/" + (it.f ? "Favorites/" : "") + encodeURIComponent(n);
+  }
+
+  var firstBig = null; // a clip big enough for the speed test
+
+  // Reads 20 MB of a clip and reports the real link speed. DVR clips run at about
+  // 20 Mbit/s: below that, the picture freezes while the phone waits for data.
+  function speedTest() {
+    var out = $("speed");
+    if (!firstBig) { out.textContent = "No clip to test with."; return; }
+    out.textContent = "Measuring...";
+    var t0 = performance.now(), got = 0;
+    fetch(firstBig, { headers: { Range: "bytes=0-20971519" }, cache: "no-store" })
+      .then(function (r) {
+        var rd = r.body.getReader();
+        function pump() {
+          return rd.read().then(function (c) {
+            if (c.done) return;
+            got += c.value.length;
+            var secs = (performance.now() - t0) / 1000;
+            out.textContent = "Measuring... " + (got * 8 / 1e6 / secs).toFixed(1) + " Mbit/s";
+            return pump();
+          });
+        }
+        return pump();
+      })
+      .then(function () {
+        var mbps = got * 8 / 1e6 / ((performance.now() - t0) / 1000);
+        linkMbps = mbps;
+        out.textContent = "Link speed: " + mbps.toFixed(1) + " Mbit/s" +
+          (mbps < 25 ? " - below the ~20 Mbit/s of a clip with some margin, playback may freeze. Download instead." : " - fine for playback.");
+      })
+      .catch(function () { out.textContent = "The speed test failed."; });
+  }
+  $("speedbtn").onclick = speedTest;
+
+  function loadList() {
+    var xhr = new XMLHttpRequest();
+    $("err").textContent = "Loading the video list...";
+    xhr.open("GET", "/cgi-bin/list.cgi?" + Date.now());
+    xhr.timeout = 30000;
+    xhr.ontimeout = function () { $("err").textContent = "The goggle is slow to answer, try again."; };
+    xhr.onload = function () {
+      var items = [];
+      try { items = JSON.parse(xhr.responseText); } catch (e) { $("err").textContent = "Could not read the video list."; return; }
+      items = items.filter(function (it) { return it.n; });
+      items.forEach(function (it) { it.t = stamp(it.n, it.d); });
+      items.sort(function (a, b) { return b.t - a.t; }); // newest first, favourites and the rest together
+      $("err").textContent = "";
+      allItems = items;
+      renderList();
+    };
+    xhr.onerror = function () { $("err").textContent = "Could not reach the goggle."; };
+    xhr.send();
+  }
+
+  // The list as shown: everything, or only the favourites.
+  var allItems = [], onlyFav = false;
+  try { onlyFav = localStorage.getItem("favOnly") === "1"; } catch (e) {}
+
+  function renderList() {
+    var items = onlyFav ? allItems.filter(function (it) { return it.f; }) : allItems;
+    var favCount = allItems.filter(function (it) { return it.f; }).length;
+    $("f-all").textContent = "All (" + allItems.length + ")";
+    $("f-fav").textContent = "\u2605 Favorites (" + favCount + ")";
+    $("f-all").classList.toggle("on", !onlyFav);
+    $("f-fav").classList.toggle("on", onlyFav);
+    var ul = $("list");
+    ul.innerHTML = "";
+    $("empty").textContent = onlyFav ? "No favorites yet." : "No video on the SD card.";
+    $("empty").hidden = items.length > 0;
+    firstBig = null;
+    items.forEach(function (it) { if (!firstBig && it.s > 25000000) firstBig = clipUrl(it); });
+    var days = [], lastKey = "";
+    items.forEach(function (it) {
+        var li = document.createElement("li");
+        if (it.t) {                              // first clip of each day = target of the date index
+          var dt = new Date(it.t), key = dt.getFullYear() + "-" + two(dt.getMonth() + 1) + "-" + two(dt.getDate());
+          if (key !== lastKey) { lastKey = key; days.push({ key: key, y: dt.getFullYear(), m: dt.getMonth() + 1, d: dt.getDate(), li: li }); }
+        }
+        var tw = document.createElement("div");
+        tw.className = "tw";
+        var th = document.createElement("img");
+        th.className = "thumb";
+        th.loading = "lazy";
+        th.alt = "";
+        th.src = clipUrl(it, ".jpg");
+        th.onerror = function () { th.style.visibility = "hidden"; }; // clip without a thumbnail
+        tw.appendChild(th);
+        var ico = document.createElement("span");
+        ico.className = "play-ico";
+        tw.appendChild(ico);
+        if (it.l) {
+          var lt = document.createElement("span");
+          lt.className = "lt";
+          lt.textContent = "LIGHT";
+          tw.appendChild(lt);
+        }
+        if (it.f) {
+          var star = document.createElement("span");
+          star.className = "star";
+          star.textContent = "\u2605";
+          tw.appendChild(star);
+        }
+        tw.onclick = function () { playClip(it); };
+        var info = document.createElement("div");
+        info.className = "info";
+        info.innerHTML = "<div class='name'></div><div class='meta'><span class='sz'></span><span class='dt'></span></div>";
+        info.firstChild.textContent = it.n;
+        var w = when(it.n, it.d);
+        info.querySelector(".sz").textContent = size(it.s);
+        info.querySelector(".dt").textContent = w;
+        var act = document.createElement("div");
+        act.className = "actions";
+        var play = document.createElement("button");
+        play.className = "btn play";
+        play.textContent = "Play";
+        play.onclick = function () { playClip(it); };
+        var dl = document.createElement("a");
+        dl.className = "btn dl";
+        dl.setAttribute("aria-label", "Download");
+        dl.innerHTML = "<span class='lbl'>Download</span><span class='ico'>\u2193</span>";
+        dl.href = clipUrl(it);
+        dl.setAttribute("download", it.n);
+        act.appendChild(play);
+        if (/\.mp4$/i.test(it.n)) {
+          act.appendChild(dl);
+        } else {                                            // a .ts is of no use downloaded: convert it
+          var cv = document.createElement("button");
+          cv.className = "btn dl conv";
+          cv.setAttribute("aria-label", "Convert to MP4");
+          cv.innerHTML = "<span class='lbl'>Convert to MP4</span><span class='ico'>MP4</span>";
+          cv.onclick = function () { convertClip(it); };
+          act.appendChild(cv);
+        }
+        li.appendChild(tw); li.appendChild(info); li.appendChild(act);
+        ul.appendChild(li);
+    });
+    buildDays(days);
+  }
+
+  /* ---- date index (right edge) ---- */
+  var dayList = [];
+
+  function buildDays(days) {
+    var nav = $("days"), lastMonth = "";
+    dayList = days;
+    nav.innerHTML = "";
+    days.forEach(function (day) {
+      var month = two(day.m) + "-" + two(day.y % 100);      // "09-26", as on the Playback page
+      if (month !== lastMonth) {
+        lastMonth = month;
+        var mo = document.createElement("div");
+        mo.className = "mo";
+        mo.textContent = month;
+        nav.appendChild(mo);
+      }
+      var b = document.createElement("button");
+      b.textContent = two(day.d);
+      b.onclick = function () {
+        holdUntil = Date.now() + 900;                       // keep the tapped day lit while the page scrolls there
+        setActive(day);
+        day.li.scrollIntoView({ behavior: "smooth", block: "start" });
+      };
+      day.btn = b;
+      nav.appendChild(b);
+    });
+    spy();
+  }
+
+  // Light up the day of the clip at the top of the screen.
+  var spyBusy = false, spyCur = null, holdUntil = 0;
+
+  function setActive(cur) {
+    if (cur === spyCur) return;
+    spyCur = cur;
+    dayList.forEach(function (day) { day.btn.classList.toggle("on", day === cur); });
+    var nav = $("days"), b = cur.btn;                      // keep it visible in the strip
+    if (b.offsetTop < nav.scrollTop + 30) nav.scrollTop = b.offsetTop - 30;
+    else if (b.offsetTop + b.offsetHeight > nav.scrollTop + nav.clientHeight - 10) nav.scrollTop = b.offsetTop + b.offsetHeight - nav.clientHeight + 10;
+  }
+
+  function spy() {
+    if (!dayList.length || Date.now() < holdUntil) return;
+    var pl = $("player"), top = (pl.classList.contains("on") ? pl.getBoundingClientRect().bottom : 0) + 14, cur = dayList[0];
+    if (window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 4) {
+      cur = dayList[dayList.length - 1];                   // at the very bottom the last days cannot reach the top
+    } else {
+      for (var i = 0; i < dayList.length; i++) {
+        if (dayList[i].li.getBoundingClientRect().top <= top + 40) cur = dayList[i]; else break;
+      }
+    }
+    setActive(cur);
+  }
+  // The strip starts where the player really ends on the screen: below the page's own top while the
+  // player has not reached the top yet, at the player's bottom once it sticks there.
+  function placeDays() {
+    var pl = $("player");
+    $("days").style.top = (pl.classList.contains("on") ? Math.max(0, Math.round(pl.getBoundingClientRect().bottom)) : 0) + "px";
+  }
+  window.addEventListener("scroll", function () {
+    placeDays();
+    if (spyBusy) return;
+    spyBusy = true;
+    requestAnimationFrame(function () { spyBusy = false; placeDays(); spy(); });
+  }, { passive: true });
+  window.addEventListener("resize", function () { spyCur = null; spy(); });
+
+  function setFilter(fav) {
+    onlyFav = fav;
+    try { localStorage.setItem("favOnly", fav ? "1" : "0"); } catch (e) {}
+    renderList();
+  }
+  $("f-all").onclick = function () { setFilter(false); };
+  $("f-fav").onclick = function () { setFilter(true); };
+
+  // Why a clip does not play: the browser's own error, and what the goggle serves for the
+  // file actually loaded in the player (its type, size and first bytes).
+  function reportPlayError(it, extra) {
+    var v = $("vidv"), e = v.error, url = v.currentSrc || clipUrl(it), st = $("playerr");
+    st.style.color = "#ff9a9a";
+    var msg = "Cannot play " + it.n + ": " + (extra || "") + (e ? " MediaError " + e.code + "." : "") + " File " + url.replace(/^https?:\/\/[^/]+/, "");
+    var x = new XMLHttpRequest();
+    x.open("HEAD", url);
+    x.onload = function () {
+      msg += " - HTTP " + x.status + ", " + x.getResponseHeader("Content-Type") + ", " + x.getResponseHeader("Content-Length") + " bytes.";
+      st.textContent = msg;
+      var r = new XMLHttpRequest();                       // first bytes: an mp4 starts with "....ftyp"
+      r.open("GET", url);
+      r.setRequestHeader("Range", "bytes=0-31");
+      r.overrideMimeType("text/plain; charset=x-user-defined");
+      r.onload = function () {
+        var t = (r.responseText || "").split("").map(function (c) {
+          var n = c.charCodeAt(0) & 255; return n >= 32 && n < 127 ? c : ".";
+        }).join("");
+        st.textContent = msg + " Starts with: " + t;
+      };
+      r.send();
+    };
+    x.onerror = function () { st.textContent = msg + " The goggle did not answer."; };
+    x.send();
+  }
+
+  var convTimer = null;
+
+  var resume = { url: null, tries: 0 };
+
+  // The WiFi link (about 18 Mbit/s) is slower than a DVR clip (about 22 Mbit/s), so
+  // playing at once would freeze when the buffer runs dry. Load ahead first: measure
+  // how many seconds of video arrive per second, work out the lead needed to reach the
+  // end without a stall, and start once the buffer holds it. Playing from the player's
+  // own controls skips the wait. A stall during playback pauses and buffers again.
+  var gate = null, curSize = 0, curItem = null, linkMbps = null, noLight = false;
+
+  // Progress bar under the player: the goggle preparing the clip, then the loading ahead.
+  function showBar(pct) {
+    var b = $("bar");
+    if (pct === null) { b.hidden = true; return; }
+    b.hidden = false;
+    $("barfill").style.width = Math.max(0, Math.min(100, pct)) + "%";
+  }
+
+  // A light copy of a clip, made by the goggle's video hardware (30 images/s at most, about 8 Mbit/s):
+  // small enough for the WiFi. The original stays; the copy is played, and listed with a LIGHT mark.
+  var lightTimer = null;
+
+  // Calls the light copy CGI and follows the job. auto: the CGI looks at the clip's frame rate first and
+  // answers "fast" for 30 images/s or less (onFast then plays it as it is). Plays the copy when it is ready.
+  function runLight(it, nm, auto, onFast) {
+    var v = $("vidv"), st = $("playerr");
+    var base = nm.replace(/\.[^.]+$/, "");
+    function play() {
+      showBar(null);
+      $("player").classList.remove("convonly");
+      $("nowplaying").textContent = base + " (light copy)";
+      $("origbtn").hidden = false;
+      st.style.color = "";
+      st.textContent = "";
+      setSrc("/dvr/Light/" + encodeURIComponent(base) + ".mp4");
+      loadList();                                                      // shows the LIGHT mark
+    }
+    if (gate) { clearInterval(gate); gate = null; }                    // stop loading a heavy clip
+    v.pause(); v.removeAttribute("src"); v.load();
+    $("alert").hidden = true;
+    $("player").classList.add("convonly");
+    $("nowplaying").textContent = auto ? nm : "Making a light copy of " + base;
+    st.style.color = "";
+    st.textContent = auto ? "Reading the clip..." : "";
+    showBar(0);
+    function poll() {
+      var x = new XMLHttpRequest();
+      x.open("GET", "/cgi-bin/light.cgi?f=" + encodeURIComponent(nm) + (it.f ? "&fav=1" : "") + (auto ? "&auto=1" : "") + "&" + Date.now());
+      x.timeout = 20000;
+      x.onload = function () {
+        var r = {};
+        try { r = JSON.parse(x.responseText); } catch (e) { r = { state: "error", why: "HTTP " + x.status }; }
+        if (r.state === "fast") { $("player").classList.remove("convonly"); showBar(null); st.textContent = ""; onFast(); }
+        else if (r.state === "ready") { it.l = 1; play(); }
+        else if (r.state === "working") {
+          st.textContent = (auto ? "More than 30 images per second" + (r.info ? " (" + r.info + ")" : "") + ": the goggle makes a light copy for the WiFi... " : "The goggle is making the light copy... ") + (r.percent || 0) + " %";
+          showBar(r.percent || 0);
+          lightTimer = setTimeout(poll, 1500);
+        } else if (r.state === "busy") {
+          st.textContent = "The goggle is busy with another job, waiting...";
+          lightTimer = setTimeout(poll, 3000);
+        } else {
+          showBar(null);
+          $("player").classList.remove("convonly");
+          st.style.color = "#ff9a9a";
+          if (auto) {                                                  // no light copy: play the clip as it is
+            st.textContent = "No light copy (" + (r.why || "unknown error") + "), playing the original.";
+            onFast();
+          } else {
+            st.textContent = "Could not make the light copy (" + (r.why || "unknown error") + "). Use Download.";
+          }
+        }
+      };
+      x.onerror = x.ontimeout = function () {
+        showBar(null);
+        $("player").classList.remove("convonly");
+        st.style.color = "#ff9a9a";
+        if (auto) { st.textContent = "The goggle did not answer the light copy request, playing the original."; onFast(); }
+        else st.textContent = "The goggle did not answer.";
+      };
+      x.send();
+    }
+    if (lightTimer) clearTimeout(lightTimer);
+    poll();
+  }
+
+  // The alert's button: a light copy of the clip being played (or play it if it exists).
+  function lightClip() {
+    var it = curItem;
+    if (!it || !resume.url) return;
+    runLight(it, decodeURIComponent(resume.url.split("/").pop()), false, function () {});   // the file really loaded (an .mp4 after a conversion)
+  }
+  $("alertlight").onclick = lightClip;
+  $("origbtn").onclick = function () { if (curItem) { noLight = true; playClip(curItem); } };
+
+  // Alert when a clip needs more than the WiFi gives: it will pause regularly, so advise to download it.
+  function updateAlert(clipMbps, link) {
+    var box = $("alert");
+    // No alert for a light copy: it is what the alert proposes
+    if (!clipMbps || !link || clipMbps <= link * 1.1 || !curItem || /\/Light\//.test(resume.url || "")) { box.hidden = true; return; }
+    $("alerttxt").textContent = "\u26A0 This clip needs about " + Math.round(clipMbps) + " Mbit/s but the WiFi gives about " +
+      Math.round(link) + ". Playback will pause regularly. Download it to watch without pauses.";
+    var lightBtn = $("alertlight"), estMb = Math.round(curSize * 8 / 1e6 / clipMbps);   // 8 Mbit/s is 1 MB per second of clip
+    lightBtn.textContent = curItem.l ? "Play the light copy" : "Make a light copy (about " + estMb + " MB, 30 images/s)";
+    var dl = $("alertdl");
+    dl.href = resume.url;                                   // the file actually loaded: the .mp4, also for a converted .ts
+    dl.setAttribute("download", decodeURIComponent(resume.url.split("/").pop()));
+    box.hidden = false;
+  }
+
+  // Reads a few MB of a clip to know the WiFi speed (the Test link speed button shares the number).
+  var measuring = false;
+  function measureLink(done) {
+    if (measuring || !firstBig) { if (done) done(); return; }
+    measuring = true;
+    var t0 = performance.now(), got = 0;
+    fetch(firstBig, { headers: { Range: "bytes=0-6291455" }, cache: "no-store" })
+      .then(function (r) {
+        var rd = r.body.getReader();
+        function pump() { return rd.read().then(function (c) { if (c.done) return; got += c.value.length; return pump(); }); }
+        return pump();
+      })
+      .then(function () { var secs = (performance.now() - t0) / 1000; if (secs > 0.3 && got > 1000000) linkMbps = got * 8 / 1e6 / secs; })
+      .catch(function () {})
+      .then(function () { measuring = false; if (done) done(); });
+  }
+
+  function setSrc(url) {
+    var v = $("vidv"), st = $("playerr");
+    resume.url = url;
+    resume.tries = 0;
+    if (gate) { clearInterval(gate); gate = null; }
+    v.preload = "auto";
+    v.src = url;
+    v.load();
+
+    var last = { t: performance.now(), b: 0 }, ratio = null, stuck = 0, waiting = true, started = false, firstT = 0;
+    function begin() {
+      waiting = false;
+      showBar(null);
+      st.textContent = "";
+      // a phone may refuse to start by itself: then the clip is loaded, one tap on play
+      v.play().catch(function () { st.textContent = "Loaded: tap play to start."; });
+    }
+    v.onplay = function () { if (waiting) { waiting = false; st.textContent = ""; } started = true; showBar(null); };
+    v.onwaiting = function () {            // ran dry while playing: buffer again
+      if (started && !waiting && !v.ended) { showBar(0); waiting = true; stuck = 0; ratio = null; last = { t: performance.now(), b: bufEnd() }; v.pause(); }
+    };
+    function bufEnd() { return v.buffered.length ? v.buffered.end(v.buffered.length - 1) : 0; }
+
+    gate = setInterval(function () {
+      if (!waiting) return;
+      var d = v.duration;
+      if (!(d > 0)) return;                  // metadata not here yet
+      var end = bufEnd(), now = performance.now();
+      // Nothing is measured before the first data has arrived: no data yet is not "a speed of 0".
+      if (firstT === 0 && end > 0) { firstT = now; last = { t: now, b: end }; }
+      var dt = (now - last.t) / 1000;
+      if (firstT && dt >= 2) {
+        var r = (end - last.b) / dt;          // seconds of video per second
+        ratio = ratio === null ? r : ratio * 0.5 + r * 0.5;
+        stuck = (end - last.b) < 0.2 ? stuck + 1 : 0;
+        last = { t: now, b: end };
+      }
+      var ahead = end - v.currentTime;
+      if (curSize > 0 && d > 0) {              // alert as soon as the clip's rate and the link's are known
+        var clipMbps0 = curSize * 8 / 1e6 / d;
+        // what the WiFi gave since the data started to come: seconds of video received per
+        // second, times the clip's own rate (needs a few seconds to mean something)
+        var link0 = null;
+        if (firstT && end >= 2 && (now - firstT) >= 3000) link0 = clipMbps0 * end / ((now - firstT) / 1000);
+        if (link0 === null) link0 = linkMbps;          // the Test link speed button, if it was used
+        if (link0) updateAlert(clipMbps0, link0);
+      }
+      var need = (ratio !== null && ratio < 1.05) ? Math.min(d, d * (1 - Math.max(ratio, 0)) + 6) : 6;
+      // A phone does not hold more than about this ahead: aim for it, fewer and longer pauses
+      // are better than a wait that never ends (the clip pauses and reloads anyway if it is faster than the link).
+      var slow = ratio !== null && ratio < 0.85;
+      if (slow) need = Math.min(need, 45);
+      if (end >= d - 0.5 || ahead >= need || stuck >= 5) { begin(); return; }
+      st.style.color = "";
+      st.textContent = "Loading ahead for smooth playback: " + Math.floor(ahead) + " / " + Math.ceil(need) + " s";
+      showBar(need > 0 ? ahead / need * 100 : 0);
+    }, 500);
+  }
+
+  // The WiFi link is slow and can drop: when playback fails mid-clip (network
+  // error), reload the same file and carry on from where it stopped.
+  function tryResume(name) {
+    var v = $("vidv");
+    if (!resume.url || v.currentTime < 1 || resume.tries >= 8) return false;
+    var t = v.currentTime, st = $("playerr");
+    resume.tries++;
+    st.style.color = "";
+    st.textContent = "Connection lost, resuming at " + Math.floor(t) + " s (attempt " + resume.tries + ")...";
+    setTimeout(function () {
+      v.src = resume.url;
+      v.addEventListener("loadedmetadata", function once() {
+        v.removeEventListener("loadedmetadata", once);
+        v.currentTime = t;
+        v.play().catch(function () {});
+        st.textContent = "";
+      });
+      v.load();
+    }, 1500);
+    return true;
+  }
+
+  // DVR clips are HEVC in .ts, which browsers cannot play: the goggle remuxes
+  // them to an .mp4 (a few seconds to a minute, no re-encode) and we play that.
+  function convertAndPlay(it, playAfter) {
+    if (playAfter === undefined) playAfter = true;
+    var name = it.n, st = $("playerr");
+    if (convTimer) { clearTimeout(convTimer); convTimer = null; }
+    function poll() {
+      var x = new XMLHttpRequest();
+      x.open("GET", "/cgi-bin/convert.cgi?f=" + encodeURIComponent(name) + (it.f ? "&fav=1" : "") + "&" + Date.now());
+      x.timeout = 20000;
+      x.onload = function () {
+        var r = {};
+        try { r = JSON.parse(x.responseText); } catch (e) { r = { state: "error" }; }
+        if (r.state === "ready" && r.converted) {                   // the .mp4 now sits where the .ts was
+          $("nowplaying").textContent = r.url.split("/").pop();
+          loadList();
+        }
+        if (!playAfter && (r.state === "ready" || r.state === "direct")) {
+          showBar(null);
+          st.style.color = "";
+          st.textContent = r.state === "ready" ? "Converted: " + r.url.split("/").pop() + ". The .ts is replaced." : "Already playable as it is.";
+          convTimer = setTimeout(function () { if (!$("vidv").currentSrc) $("player").classList.remove("on"); updatePl(); }, 4000);
+        } else if (r.state === "direct") { st.style.color = ""; st.textContent = ""; showBar(null); setSrc(clipUrl(it)); }
+        else if (r.state === "ready") { st.style.color = ""; st.textContent = ""; showBar(null); setSrc(r.url); }
+        else if (r.state === "working") {
+          st.style.color = "";
+          st.textContent = "Preparing the video on the goggle... " + (r.percent || 0) + " %";
+          showBar(r.percent || 0);
+          convTimer = setTimeout(poll, 1500);
+        } else if (r.state === "busy") {
+          st.style.color = "";
+          st.textContent = "The goggle is preparing another video, waiting...";
+          convTimer = setTimeout(poll, 3000);
+        } else {
+          st.style.color = "#ff9a9a";
+          showBar(null);
+          st.textContent = "Could not prepare " + name + " (" + (r.why || "unknown error") + "). Use Download.";
+        }
+      };
+      x.onerror = x.ontimeout = function () { st.style.color = "#ff9a9a"; st.textContent = "The goggle did not answer."; };
+      x.send();
+    }
+    poll();
+  }
+
+  // Convert to MP4 without playing: the player block only shows the progress.
+  function convertClip(it) {
+    var v = $("vidv");
+    if (convTimer) { clearTimeout(convTimer); convTimer = null; }
+    if (gate) { clearInterval(gate); gate = null; }
+    v.pause();
+    v.removeAttribute("src");
+    v.load();
+    $("alert").hidden = true;
+    $("player").classList.add("on", "convonly");
+    $("nowplaying").textContent = "Converting " + it.n;
+    $("playerr").textContent = "";
+    $("playerr").style.color = "";
+    showBar(0);
+    updatePl();
+    convertAndPlay(it, false);
+  }
+
+  function playClip(it) {
+    var name = it.n, v = $("vidv");
+    curSize = it.s || 0;
+    curItem = it;
+    $("alert").hidden = true;
+    $("player").classList.remove("convonly");
+    $("player").classList.add("on");
+    $("nowplaying").textContent = name;
+    $("playerr").textContent = "";
+    $("playerr").style.color = "";
+    if (convTimer) { clearTimeout(convTimer); convTimer = null; }
+    if (gate) { clearInterval(gate); gate = null; }
+    if (lightTimer) { clearTimeout(lightTimer); lightTimer = null; }
+    showBar(null);
+    v.pause();
+    v.poster = clipUrl(it, ".jpg");
+    v.onerror = function () { if (!tryResume(name)) reportPlayError(it, ""); };
+
+    $("origbtn").hidden = true;
+    if (noLight) {                       // asked for the original
+      noLight = false;
+      convertAndPlay(it);
+    } else {
+      // more than 30 images/s: always the light copy (made if needed), otherwise as it is:
+      // ts -> mp4, old HEVC mp4 -> re-tagged, other mp4 -> "direct"
+      runLight(it, it.n, true, function () { convertAndPlay(it); });
+    }
+    v.scrollIntoView({ behavior: "smooth", block: "start" });
+    updatePl();
+  }
+
+  // The date strip and the day jumps start below the player: keep its height in --pl.
+  function updatePl() {
+    var pl = $("player");
+    document.documentElement.style.setProperty("--pl", (pl.classList.contains("on") ? pl.offsetHeight : 0) + "px");
+    placeDays();
+    spyCur = null;
+    spy();
+  }
+  if (window.ResizeObserver) new ResizeObserver(updatePl).observe($("player"));
+  window.addEventListener("resize", updatePl);
+
+  loadList();
+})();
+</script>
+</body>
+</html>

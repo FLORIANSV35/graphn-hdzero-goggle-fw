@@ -31,6 +31,7 @@ typedef enum {
     ITEM_FORMAT,
     ITEM_REPAIR,
     ITEM_CLEAR_DVR,
+    ITEM_CLEAR_LIGHT,
     ITEM_BACK,
 
     ITEM_LIST_TOTAL
@@ -64,9 +65,11 @@ typedef struct {
     lv_obj_t *format_sd;
     lv_obj_t *repair_sd;
     lv_obj_t *clear_dvr;
+    lv_obj_t *clear_light;
     int confirm_format;
     int confirm_repair;
     int confirm_clear;
+    int confirm_clear_light;
     bool status_displayed;
     lv_obj_t *back;
     lv_obj_t *status;
@@ -96,6 +99,7 @@ static void page_storage_disable_controls() {
     lv_obj_add_state(page_storage.format_sd, STATE_DISABLED);
     lv_obj_add_state(page_storage.repair_sd, STATE_DISABLED);
     lv_obj_add_state(page_storage.clear_dvr, STATE_DISABLED);
+    lv_obj_add_state(page_storage.clear_light, STATE_DISABLED);
 }
 
 static void page_storage_enable_controls() {
@@ -108,6 +112,7 @@ static void page_storage_enable_controls() {
     lv_obj_clear_state(page_storage.format_sd, STATE_DISABLED);
     lv_obj_clear_state(page_storage.repair_sd, STATE_DISABLED);
     lv_obj_clear_state(page_storage.clear_dvr, STATE_DISABLED);
+    lv_obj_clear_state(page_storage.clear_light, STATE_DISABLED);
 }
 
 static void page_storage_update_controls() {
@@ -139,9 +144,11 @@ static void page_storage_cancel() {
     page_storage.confirm_format = 0;
     page_storage.confirm_repair = 0;
     page_storage.confirm_clear = 0;
+    page_storage.confirm_clear_light = 0;
     lv_label_set_text(page_storage.format_sd, _lang("Format SD Card"));
     lv_label_set_text(page_storage.repair_sd, _lang("Repair SD Card"));
     lv_label_set_text(page_storage.clear_dvr, _lang("Clear DVR Folder"));
+    lv_label_set_text(page_storage.clear_light, _lang("Clear Light DVR"));
 }
 
 /**
@@ -440,8 +447,9 @@ static lv_obj_t *page_storage_create(lv_obj_t *parent, panel_arr_t *arr) {
     page_storage.format_sd = create_label_item(cont, _lang("Format SD Card"), 1, 2, 3);
     page_storage.repair_sd = create_label_item(cont, _lang("Repair SD Card"), 1, 3, 3);
     page_storage.clear_dvr = create_label_item(cont, _lang("Clear DVR Folder"), 1, 4, 3);
+    page_storage.clear_light = create_label_item(cont, _lang("Clear Light DVR"), 1, 5, 3);
     snprintf(buf, sizeof(buf), "< %s", _lang("Back"));
-    page_storage.back = create_label_item(cont, buf, 1, 5, 1);
+    page_storage.back = create_label_item(cont, buf, 1, 6, 1);
 
     page_storage.note = lv_label_create(cont);
     lv_obj_set_style_text_font(page_storage.note, UI_PAGE_LABEL_FONT, 0);
@@ -449,7 +457,7 @@ static lv_obj_t *page_storage_create(lv_obj_t *parent, panel_arr_t *arr) {
     lv_obj_set_style_text_color(page_storage.note, lv_color_hex(TEXT_COLOR_DEFAULT), 0);
     lv_obj_set_style_pad_top(page_storage.note, UI_PAGE_TEXT_PAD, 0);
     lv_label_set_long_mode(page_storage.note, LV_LABEL_LONG_WRAP);
-    lv_obj_set_grid_cell(page_storage.note, LV_GRID_ALIGN_START, 1, 4, LV_GRID_ALIGN_START, 6, 2);
+    lv_obj_set_grid_cell(page_storage.note, LV_GRID_ALIGN_START, 1, 4, LV_GRID_ALIGN_START, 7, 2);
 
     page_storage.status = create_msgbox_item(_lang("Status"), _lang("None"));
     lv_obj_add_flag(page_storage.status, LV_OBJ_FLAG_HIDDEN);
@@ -525,6 +533,7 @@ static void page_storage_on_roller(uint8_t key) {
     if (page_storage.confirm_format == 2 ||
         page_storage.confirm_repair == 2 ||
         page_storage.confirm_clear == 2 ||
+        page_storage.confirm_clear_light == 2 ||
         page_storage.status_displayed) {
         return;
     }
@@ -621,6 +630,29 @@ static void page_storage_on_click(uint8_t key, int sel) {
                 page_storage.confirm_clear = 1;
                 snprintf(buf, sizeof(buf), "%s #FF0000 %s...#", _lang("Clear DVR Folder"), _lang("Click to confirm or Scroll to cancel"));
                 lv_label_set_text(page_storage.clear_dvr, buf);
+            }
+        }
+        break;
+    case ITEM_CLEAR_LIGHT:
+        // The light copies the WiFi share made (DVR folder/Light): the originals stay.
+        if (!page_storage.disable_controls) {
+            if (page_storage.confirm_clear_light) {
+                page_storage.confirm_clear_light = 2;
+                snprintf(buf, sizeof(buf), "%s #FF0000 %s...#", _lang("Clear Light DVR"), _lang("Removing"));
+                lv_label_set_text(page_storage.clear_light, buf);
+                lv_timer_handler();
+                LOGI("Clear light dvr folder");
+                char cmd[256];
+                snprintf(cmd, sizeof(cmd), "rm -rf %s%sLight", REC_diskPATH, REC_packPATH);
+                system_exec(cmd);
+                snprintf(buf, sizeof(buf), "%s #FFFF00 %s#", _lang("Clear Light DVR"), _lang("Done"));
+                lv_label_set_text(page_storage.clear_light, buf);
+                LOGI("Clear light done");
+                page_storage.confirm_clear_light = 3;
+            } else {
+                page_storage.confirm_clear_light = 1;
+                snprintf(buf, sizeof(buf), "%s #FF0000 %s...#", _lang("Clear Light DVR"), _lang("Click to confirm or Scroll to cancel"));
+                lv_label_set_text(page_storage.clear_light, buf);
             }
         }
         break;

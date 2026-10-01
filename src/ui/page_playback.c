@@ -791,13 +791,20 @@ static void *convert_thread(void *arg) {
     struct stat src_st;
     bool const have_src_stat = (stat(convert_ts_path, &src_st) == 0);
 
+    // TS2MP4_FASTSTART: the mp4 index goes at the start of the file, so the clip
+    // starts instantly when played (web portal, phones, PCs) instead of after
+    // reading the whole file. Mode 1 reserves room for it up front (no second
+    // pass); if that ever fails, mode 2 (the muxer shifts the file) runs instead.
     // Wrapped in a subshell so the WHOLE sequence backgrounds -- "a; b &"
     // only backgrounds b, which would leave system_exec() blocking on the
     // helper itself (harmless here since we're already off the LVGL thread,
     // but it defeats the point of the bounded poll below).
     char cmd[1400];
     snprintf(cmd, sizeof(cmd),
-             "( LD_LIBRARY_PATH=/lib/libffmpeg:/lib/eyesee-mpp %s \"%s\" \"%s\" \"%s\" > %s 2>&1; echo $? > %s ) &",
+             "( export LD_LIBRARY_PATH=/lib/libffmpeg:/lib/eyesee-mpp; "
+             "TS2MP4_FASTSTART=1 %s \"%s\" \"%s\" \"%s\" > %s 2>&1 || "
+             "TS2MP4_FASTSTART=2 %s \"%s\" \"%s\" \"%s\" >> %s 2>&1; echo $? > %s ) &",
+             TS2MP4_BIN, convert_ts_path, convert_mp4_path, TS2MP4_PROGRESS_FILE, TS2MP4_LOG_FILE,
              TS2MP4_BIN, convert_ts_path, convert_mp4_path, TS2MP4_PROGRESS_FILE, TS2MP4_LOG_FILE, TS2MP4_RESULT_FILE);
     system_exec(cmd);
 

@@ -54,6 +54,11 @@ fi
 
 echo "${APP_VERSION}" > ${APP_DIR}/version
 
+# Stamp the build in the web portal's page: the version number is the same for every build of a tag,
+# so this is what tells two builds apart on the phone (the copy of mkapp/ in the build folder is stamped,
+# not the source).
+sed -i "s/__BUILD__/${APP_VERSION} $(date +%d%H%M)/" ${APP_DIR}/portal/www/index.html
+
 # Tools charts: page_tools.c shows the 1080p image on G1/G2 and the 720p one on
 # the Box Pro, never both. Drop the one this platform doesn't use (the build
 # copies mkapp/ first, so the source tree is untouched).

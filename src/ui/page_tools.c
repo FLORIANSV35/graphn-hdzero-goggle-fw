@@ -7,6 +7,7 @@
 #include "../conf/ui.h"
 
 #include "core/app_state.h"
+#include "core/battery.h"
 #include "core/osd.h"
 #include "core/scan_core.h"
 #include "core/settings.h"
@@ -15,7 +16,9 @@
 #include "driver/nct75.h"
 #include "driver/rtc6715.h"
 #include "lang/language.h"
+#include "core/sleep_mode.h"
 #include "ui/page_scannow.h"
+#include "ui/page_wifi.h"
 #include "ui/ui_porting.h"
 #include "ui/ui_style.h"
 #include "ui/ui_theme.h"
@@ -32,31 +35,32 @@
 // sidebar entry each -- Focus Chart and Frequency Chart just show a
 // fullscreen reference image, RSSI Scanner sweeps every HDZero channel in a
 // loop and charts it, Theme cycles the UI colour theme.
-#define ROW_FOCUS_CHART 0
-#define ROW_FREQ_CHART  1
+#define ROW_WIFI_SHARE  0
+#define ROW_FOCUS_CHART 1
+#define ROW_FREQ_CHART  2
 #ifdef RSSI_SCAN_ANALOG
-#define ROW_RSSI_SCAN   2
-#define ROW_RSSI_RANGE  3
-#define ROW_RSSI_STEP   4
-#define ROW_SCAN_PAGE   5
-#define ROW_TEMPERATURE 6
+#define ROW_RSSI_SCAN   3
+#define ROW_RSSI_RANGE  4
+#define ROW_RSSI_STEP   5
+#define ROW_SCAN_PAGE   6
+#define ROW_TEMPERATURE 7
 #ifndef HDZBOXPRO
-#define ROW_THEME    7
-#define ROW_SWATCHES 8
-#define ROW_BACK     9
-#define TOOLS_ROW_COUNT 10
+#define ROW_THEME    8
+#define ROW_SWATCHES 9
+#define ROW_BACK     10
+#define TOOLS_ROW_COUNT 11
 #else
 // Box Pro never offered the Theme page (ui_main_menu.c used to gate it out
 // with #if !defined(HDZBOXPRO)); keep that behaviour here.
-#define ROW_BACK        7
-#define TOOLS_ROW_COUNT 8
+#define ROW_BACK        8
+#define TOOLS_ROW_COUNT 9
 #endif
 #else
-#define ROW_TEMPERATURE 2
-#define ROW_THEME       3
-#define ROW_SWATCHES    4
-#define ROW_BACK        5
-#define TOOLS_ROW_COUNT 6
+#define ROW_TEMPERATURE 3
+#define ROW_THEME       4
+#define ROW_SWATCHES    5
+#define ROW_BACK        6
+#define TOOLS_ROW_COUNT 7
 #endif
 
 #define SWATCH_COUNT 4
@@ -71,7 +75,7 @@ static lv_coord_t col_dsc[] = {160, 160, 160, 160, 160, 160, LV_GRID_TEMPLATE_LA
 #define TOOLS_ROW_H 50
 #endif
 #define H TOOLS_ROW_H
-static lv_coord_t row_dsc[] = {H, H, H, H, H, H, H, H, H, H, H, H, LV_GRID_TEMPLATE_LAST};
+static lv_coord_t row_dsc[] = {H, H, H, H, H, H, H, H, H, H, H, H, H, H, LV_GRID_TEMPLATE_LAST};
 #undef H
 
 static lv_obj_t *chart_img;
@@ -396,8 +400,20 @@ static void refresh_temp_label(void) {
 
 // Runs from main_menu_update()'s per-page tick, which fires for every page
 // whether or not it is open: everything here must be cheap when idle.
+static void share_stop(void);
+static void share_window_text(bool starting);
+
 static void page_tools_on_update(uint32_t delta_ms) {
     (void)delta_ms;
+    // The share ends as soon as the menu is left for the video.
+    if (wifi_share_active() && !main_menu_is_shown())
+        share_stop();
+    static uint32_t share_acc;
+    share_acc += delta_ms;
+    if (wifi_share_active() && share_acc >= 1000) {
+        share_acc = 0;
+        share_window_text(false);
+    }
     refresh_temp_label();
 #ifdef RSSI_SCAN_ANALOG
     rssi_scan_tick();
@@ -429,6 +445,107 @@ static void hide_chart(void) {
 
 static lv_obj_t *note_label;
 
+// WiFi Share window: while it is up the hotspot and the web portal run.
+static lv_obj_t *share_cont;
+static lv_obj_t *share_label;
+
+// Where the portal's conversion CGI keeps the running job (mkapp/app/portal/www/cgi-bin/convert.cgi)
+#define PORTAL_CONV_DIR "/tmp/portal_conv/lock"
+
+// "nom.ts: 45 %" while the portal is converting a clip, "" otherwise.
+static void share_conversion_text(char *out, size_t size) {
+    out[0] = '\0';
+    FILE *f = fopen(PORTAL_CONV_DIR "/name", "r");
+    if (!f)
+        return;
+    char name[96] = "";
+    if (!fgets(name, sizeof(name), f))
+        name[0] = '\0';
+    fclose(f);
+    name[strcspn(name, "\r\n")] = '\0';
+    if (!name[0])
+        return;
+    int pct = 0;
+    f = fopen(PORTAL_CONV_DIR "/progress", "r");
+    if (f) {
+        if (fscanf(f, "%d", &pct) != 1)
+            pct = 0;
+        fclose(f);
+    }
+    // the CGIs key a job "light_" + ("fav_" for a favourite) + NAME
+    const char *shown = name;
+    const char *what = "";
+    if (strncmp(shown, "light_", 6) == 0) {
+        shown += 6;
+        what = "light copy ";
+    }
+    if (strncmp(shown, "fav_", 4) == 0)
+        shown += 4;
+    snprintf(out, size, "%s%s: %d %%", what, shown, pct);
+}
+
+// The share window: how to connect, then the goggle's own state while it shares.
+static void share_window_text(bool starting) {
+    char buf[480];
+    if (starting) {
+        snprintf(buf, sizeof(buf), "%s...", _lang("Starting the WiFi share"));
+        lv_label_set_text(share_label, buf);
+        return;
+    }
+
+    char bat[24] = "";
+    battery_get_voltage_str(bat);
+
+    char t[3][16];
+    int v[3] = {g_temperature.top, g_temperature.left == 99 ? -1 : g_temperature.left, g_temperature.right};
+    for (int k = 0; k < 3; k++) {
+        if (v[k] < 0)
+            snprintf(t[k], sizeof(t[k]), "--");
+        else
+            snprintf(t[k], sizeof(t[k]), "%d.%d", v[k] / 10, v[k] % 10);
+    }
+
+    char conv[128];
+    share_conversion_text(conv, sizeof(conv));
+    power_save_fans(conv[0] == '\0');          // a long job heats the chip: the fans run normally until it is over
+
+    int n = snprintf(buf, sizeof(buf), "%s: %s\n%s: %s\n%s: http://%s\n\n%s: %s\n",
+                     _lang("Network"), g_setting.wifi.ssid[0],
+                     _lang("Password"), g_setting.wifi.passwd[0],
+                     _lang("Open"), g_setting.wifi.ip_addr,
+                     _lang("Battery"), bat);
+#if defined(HDZBOXPRO)
+    n += snprintf(buf + n, sizeof(buf) - n, "%s: %s C\n", _lang("Temperature"), t[0]);
+#else
+    n += snprintf(buf + n, sizeof(buf) - n, "%s: %s %s   %s %s   %s %s C\n", _lang("Temperature"),
+                  _lang("Top"), t[0], _lang("Left"), t[1], _lang("Right"), t[2]);
+#endif
+    snprintf(buf + n, sizeof(buf) - n, "%s: %s", _lang("Conversion"), conv[0] ? conv : _lang("none"));
+
+    if (strcmp(lv_label_get_text(share_label), buf) != 0)
+        lv_label_set_text(share_label, buf);
+}
+
+static void share_start(void) {
+    lv_obj_move_foreground(share_cont);
+    lv_obj_clear_flag(share_cont, LV_OBJ_FLAG_HIDDEN);
+    lvgl_screen_orbit(false);
+    share_window_text(true);
+    lv_refr_now(NULL); // draw "starting" first: bringing the hotspot up takes a few seconds
+    wifi_share_start();
+    power_save_enter();
+    share_window_text(false);
+}
+
+static void share_stop(void) {
+    if (!wifi_share_active() && lv_obj_has_flag(share_cont, LV_OBJ_FLAG_HIDDEN))
+        return;
+    lv_obj_add_flag(share_cont, LV_OBJ_FLAG_HIDDEN);
+    lvgl_screen_orbit(g_setting.osd.orbit > 0);
+    power_save_exit();
+    wifi_share_stop();
+}
+
 // One short note for the selected row only, instead of every row's note at
 // once, to leave room on the page.
 static void update_note(int sel) {
@@ -458,6 +575,9 @@ static void update_note(int sel) {
         text = "Click to switch theme. Restart the goggles to apply the new theme.";
         break;
 #endif
+    case ROW_WIFI_SHARE:
+        text = "Starts the WiFi hotspot and the web portal (live view, videos). Ending the share switches the WiFi off.";
+        break;
     default:
         break;
     }
@@ -532,6 +652,13 @@ static lv_obj_t *page_tools_create(lv_obj_t *parent, panel_arr_t *arr) {
     lv_label_set_text(rssi_step_label, buf);
 #endif
 
+    // WiFi Share: hotspot + web portal for the time of the share (needs the WiFi module).
+    create_label_item(cont, _lang("WiFi Share"), 1, ROW_WIFI_SHARE, 5);
+    if (!wifi_share_available()) {
+        lv_obj_clear_flag(pp_tools.p_arr.panel[ROW_WIFI_SHARE], FLAG_SELECTABLE);
+        lv_obj_add_flag(pp_tools.p_arr.panel[ROW_WIFI_SHARE], LV_OBJ_FLAG_HIDDEN);
+    }
+
     // Info row, not an action: shows the goggle's temperature probes live.
     lv_obj_clear_flag(pp_tools.p_arr.panel[ROW_TEMPERATURE], FLAG_SELECTABLE);
     temp_label = create_label_item(cont, "", 1, ROW_TEMPERATURE, 5);
@@ -574,7 +701,42 @@ static lv_obj_t *page_tools_create(lv_obj_t *parent, panel_arr_t *arr) {
     lv_obj_set_style_text_color(note, lv_color_hex(TEXT_COLOR_DEFAULT), 0);
     lv_obj_set_style_pad_top(note, UI_PAGE_TEXT_PAD, 0);
     lv_label_set_long_mode(note, LV_LABEL_LONG_WRAP);
-    lv_obj_set_grid_cell(note, LV_GRID_ALIGN_START, 1, 5, LV_GRID_ALIGN_START, note_row, 2);
+    lv_obj_set_grid_cell(note, LV_GRID_ALIGN_STRETCH, 1, 5, LV_GRID_ALIGN_START, note_row, 2); // stretch: lets the long notes wrap
+
+    share_cont = lv_obj_create(lv_scr_act());
+    lv_obj_add_flag(share_cont, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(share_cont, LV_OBJ_FLAG_FLOATING);
+    lv_obj_clear_flag(share_cont, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_pos(share_cont, 0, 0);
+    lv_obj_set_size(share_cont, DRAW_HOR_RES_FHD, DRAW_VER_RES_FHD);
+    lv_obj_set_style_bg_color(share_cont, lv_color_hex(UI_COLOR_BG_ROOT), 0);
+    lv_obj_set_style_bg_opa(share_cont, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(share_cont, 0, 0);
+    lv_obj_set_style_radius(share_cont, 0, 0);
+
+    lv_obj_t *share_title = lv_label_create(share_cont);
+    lv_label_set_text(share_title, _lang("WiFi sharing in progress"));
+    lv_obj_set_style_text_font(share_title, UI_PAGE_TEXT_FONT, 0);
+    lv_obj_set_style_text_color(share_title, lv_color_hex(UI_COLOR_ACCENT), 0);
+    lv_obj_align(share_title, LV_ALIGN_CENTER, 0, -210);
+
+    share_label = lv_label_create(share_cont);
+    lv_label_set_text(share_label, "");
+    lv_obj_set_style_text_font(share_label, UI_PAGE_TEXT_FONT, 0);
+    lv_obj_set_style_text_color(share_label, lv_color_hex(TEXT_COLOR_DEFAULT), 0);
+    lv_obj_set_style_text_align(share_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_align(share_label, LV_ALIGN_CENTER, 0, -20);
+
+    lv_obj_t *share_btn = lv_label_create(share_cont);
+    lv_label_set_text(share_btn, _lang("Click to end the sharing"));
+    lv_obj_set_style_text_font(share_btn, UI_PAGE_TEXT_FONT, 0);
+    lv_obj_set_style_text_color(share_btn, lv_color_hex(UI_COLOR_BG_ROOT), 0);
+    lv_obj_set_style_bg_color(share_btn, lv_color_hex(UI_COLOR_ACCENT), 0);
+    lv_obj_set_style_bg_opa(share_btn, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(share_btn, 30, 0);
+    lv_obj_set_style_pad_hor(share_btn, 40, 0);
+    lv_obj_set_style_pad_ver(share_btn, 14, 0);
+    lv_obj_align(share_btn, LV_ALIGN_CENTER, 0, 190);
 
     chart_img = lv_img_create(lv_scr_act());
     lv_obj_add_flag(chart_img, LV_OBJ_FLAG_HIDDEN);
@@ -708,6 +870,7 @@ void tools_rssi_scan_close(void) {
 
 static void page_tools_exit(void) {
     hide_chart();
+    share_stop();
     update_note(-1);
 #ifdef RSSI_SCAN_ANALOG
     stop_rssi_scan();
@@ -715,6 +878,10 @@ static void page_tools_exit(void) {
 }
 
 static void page_tools_on_click(uint8_t key, int sel) {
+    if (wifi_share_active()) {
+        share_stop();
+        return;
+    }
     if (chart_open) {
         // Any click while a chart overlay is up just dismisses it back to
         // the row list, rather than leaving the whole Tools page.
@@ -734,6 +901,10 @@ static void page_tools_on_click(uint8_t key, int sel) {
         break;
     case ROW_FREQ_CHART:
         show_chart(false);
+        break;
+    case ROW_WIFI_SHARE:
+        if (wifi_share_available())
+            share_start();
         break;
 #ifdef RSSI_SCAN_ANALOG
     case ROW_RSSI_SCAN:

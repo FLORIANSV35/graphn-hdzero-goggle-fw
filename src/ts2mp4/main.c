@@ -7,7 +7,7 @@
 // codec parameters as-is and let the mp4 muxer reformat the H.264/H.265
 // Annex-B packets from the .ts into the length-prefixed form mp4 needs.
 //
-// usage: ts2mp4 <input.ts> <output.mp4> [progress-file]
+// usage: ts2mp4 <input.ts> <output.mp4> [progress-file]      (env TS2MP4_FASTSTART=1|2: moov first)
 //        ts2mp4 --info <input.ts> <info-file>
 // exit 0 on success, non-zero (with a message on stderr) otherwise. When
 // given, progress-file is overwritten with a plain "0"-"100" integer
@@ -19,6 +19,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/time.h>
 
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
@@ -183,6 +185,10 @@ int main(int argc, char *argv[]) {
             goto cleanup;
         }
         out_stream->codecpar->codec_tag = 0; // let the mp4 muxer pick its own tag
+        // Safari and iOS only play HEVC in an mp4 tagged hvc1; the muxer's own pick is
+        // hev1, which they refuse ("source not supported"). Same stream, different tag.
+        if (out_stream->codecpar->codec_id == AV_CODEC_ID_HEVC)
+            out_stream->codecpar->codec_tag = MKTAG('h', 'v', 'c', '1');
 
         // Even with a wide probe, this demuxer can't reliably pull
         // width/height (video) or sample rate/channels (audio) out of this
@@ -222,7 +228,31 @@ int main(int argc, char *argv[]) {
         }
     }
 
-    ret = avformat_write_header(ofmt_ctx, NULL);
+    // TS2MP4_FASTSTART puts the mp4 index (moov) at the start of the file, so a
+    // browser can start playing right away instead of fetching the whole file
+    // first.
+    //   1: reserve room for the index at the start now and write it there at
+    //      the end -- no second pass. The room is sized from the clip length
+    //      (the real index is about 1.8KB per second of DVR video; 8KB/s is
+    //      reserved). If it ever turns out too small the muxer fails, and the
+    //      caller retries with mode 2.
+    //   2: classic faststart, the muxer shifts the whole file at the end.
+    AVDictionary *mux_opts = NULL;
+    char const *const faststart = getenv("TS2MP4_FASTSTART");
+    if (faststart && strcmp(faststart, "2") == 0) {
+        av_dict_set(&mux_opts, "movflags", "faststart", 0);
+    } else if (faststart) {
+        int64_t const in_bytes = ifmt_ctx->pb ? avio_size(ifmt_ctx->pb) : 0;
+        double secs = ifmt_ctx->duration > 0 ? ifmt_ctx->duration / (double)AV_TIME_BASE : 0;
+        double const min_secs = in_bytes > 0 ? in_bytes * 8.0 / 30e6 : 0; // nothing the DVR writes is above 30 Mbps
+        if (secs < min_secs)
+            secs = min_secs;
+        char moov_size[24];
+        snprintf(moov_size, sizeof(moov_size), "%lld", (long long)(secs * 8000) + 262144);
+        av_dict_set(&mux_opts, "moov_size", moov_size, 0);
+    }
+    ret = avformat_write_header(ofmt_ctx, &mux_opts);
+    av_dict_free(&mux_opts);
     if (ret < 0) {
         print_ff_error("could not write mp4 header", ret);
         goto cleanup;
@@ -295,6 +325,15 @@ cleanup:
         avformat_free_context(ofmt_ctx);
     }
     free(stream_map);
+
+    // The .mp4 keeps the clip's recording time: the lists sort on it
+    if (ret >= 0) {
+        struct stat st;
+        if (stat(in_path, &st) == 0) {
+            struct timeval tv[2] = {{st.st_atime, 0}, {st.st_mtime, 0}};
+            utimes(out_path, tv);
+        }
+    }
 
     return (ret < 0) ? 1 : 0;
 }

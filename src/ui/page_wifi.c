@@ -204,10 +204,11 @@ static void page_wifi_update_services() {
         fprintf(fp, "wmm_enabled=1\n");
         fprintf(fp, "ignore_broadcast_ssid=0\n");
         fprintf(fp, "auth_algs=1\n");
-        fprintf(fp, "wpa=3\n");
+        // WPA2 with AES (CCMP) only: the old WPA+WPA2 / TKIP mix makes iOS and
+        // Android flag the network as "weak security".
+        fprintf(fp, "wpa=2\n");
         fprintf(fp, "wpa_passphrase=%s\n", g_setting.wifi.passwd[WIFI_MODE_AP]);
         fprintf(fp, "wpa_key_mgmt=WPA-PSK\n");
-        fprintf(fp, "wpa_pairwise=TKIP\n");
         fprintf(fp, "rsn_pairwise=CCMP\n");
         fclose(fp);
     }
@@ -220,7 +221,9 @@ static void page_wifi_update_services() {
         fprintf(fp, "interface\twlan0\n");
         fprintf(fp, "opt\tdns\t0.0.0.0\n");
         fprintf(fp, "option\tsubnet\t%s\n", g_setting.wifi.netmask);
-        fprintf(fp, "opt\trouter\t%s\n", g_setting.wifi.gateway);
+        // Phones (iOS) want a router in the lease: always the .1 of the hotspot's network
+        // (192.168.2.1 by default), whatever the gateway kept for the client mode is.
+        fprintf(fp, "opt\trouter\t%d.%d.%d.%d\n", ip[3], ip[2], ip[1], 1);
         fprintf(fp, "opt\twins\t0.0.0.0\n");
         fprintf(fp, "option\tdomain\tlocal\n");
         fprintf(fp, "option\tlease\t864000\n");
@@ -346,6 +349,72 @@ static void page_wifi_update_settings() {
 
         if (g_setting.wifi.ssh) {
             system_exec("dropbear");
+        }
+    }
+}
+
+/**
+ * WiFi Share: the web portal over a Host hotspot, only for the time of the share. The WiFi
+ * Module (live stream, SSH) is its own thing and ends the share as it was before it:
+ *   WiFi Module off              -> the share starts the hotspot, and stops it at the end
+ *   on, as a Host                -> the share only adds the portal, hotspot / live stream / SSH stay
+ *   on, as a Client              -> the Client is left for the share, and reconnected after it
+ */
+static bool wifi_share_running = false;
+static bool wifi_share_was_on = false;
+static bool wifi_share_was_host = false;
+
+bool wifi_share_available(void) {
+#if defined(_WIN32)
+    return false;
+#else
+    return g_setting.has_all_features;
+#endif
+}
+
+bool wifi_share_active(void) {
+    return wifi_share_running;
+}
+
+void wifi_share_start(void) {
+    if (wifi_share_running)
+        return;
+
+    wifi_share_was_on = g_setting.wifi.enable;
+    wifi_share_was_host = (g_setting.wifi.mode == WIFI_MODE_AP);
+
+    if (access(WIFI_AP_ON, F_OK) != 0)
+        page_wifi_update_services();
+
+    if (!(wifi_share_was_on && wifi_share_was_host)) {
+        if (wifi_share_was_on)
+            system_script(WIFI_OFF); // leave the Client connection
+        system_script(WIFI_AP_ON);
+        // The share only serves files: the RTSP live server that script started is not needed
+        // and takes CPU away from the transfer. (Left alone when the WiFi Module already runs
+        // as a Host: it is its live stream.)
+        system_exec("killall rtspLive");
+    }
+
+    char cmd[128];
+    snprintf(cmd, sizeof(cmd), "%s start", WIFI_PORTAL);
+    system_script(cmd);
+    wifi_share_running = true;
+}
+
+void wifi_share_stop(void) {
+    if (!wifi_share_running)
+        return;
+    wifi_share_running = false;
+
+    system_script(WIFI_PORTAL " stop");
+
+    if (!(wifi_share_was_on && wifi_share_was_host)) {
+        system_script(WIFI_OFF);
+        if (wifi_share_was_on) {                  // it was a Client: reconnect it
+            system_script(WIFI_STA_ON);
+            if (g_setting.wifi.ssh)
+                system_exec("dropbear");
         }
     }
 }

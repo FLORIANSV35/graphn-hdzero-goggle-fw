@@ -97,3 +97,84 @@ void sleep_reminder() {
         beepCnt = 0;
     }
 }
+
+static bool power_save_on = false;
+static int ps_fans_auto_mode;
+static fan_speed_t ps_fan_speed;
+static bool ps_fans_min;
+
+void power_save_enter(void) {
+    if (power_save_on)
+        return;
+    power_save_on = true;
+    LOGI("Power save on");
+
+    // The receivers are going off: nothing left to record, and the card is about to be read by the portal
+    if (dvr_is_recording)
+        dvr_cmd(DVR_STOP);
+
+    // Same steps as go_sleep() for the receivers and the fans
+    HDZero_Close();
+    if (getHwRevision() == HW_REV_2) {
+        DM5680_ExternalAnalog_Power(1);
+    }
+    rtc6715.init(0, 0);
+
+    ps_fans_auto_mode = g_setting.fans.auto_mode;
+    ps_fan_speed.top = fan_speed.top;
+    ps_fan_speed.left = fan_speed.left;
+    ps_fan_speed.right = fan_speed.right;
+    g_setting.fans.top_speed = MIN_FAN_TOP;
+    g_setting.fans.left_speed = MIN_FAN_SIDE;
+    g_setting.fans.right_speed = MIN_FAN_SIDE;
+    g_setting.fans.auto_mode = 0;
+    fans_top_setspeed(MIN_FAN_TOP);
+    fans_left_setspeed(MIN_FAN_SIDE);
+    fans_right_setspeed(MIN_FAN_SIDE);
+    ps_fans_min = true;
+
+    // Dim, don't switch off: the share window has to stay readable
+    screen.brightness(1);
+}
+
+void power_save_exit(void) {
+    if (!power_save_on)
+        return;
+    power_save_on = false;
+    ps_fans_min = false;
+    LOGI("Power save off");
+
+    screen.brightness(g_setting.image.oled);
+
+    Analog_Module_Power(1);
+    g_setting.fans.right_speed = ps_fan_speed.right;
+    g_setting.fans.left_speed = ps_fan_speed.left;
+    fans_right_setspeed(ps_fan_speed.right);
+    fans_left_setspeed(ps_fan_speed.left);
+    g_setting.fans.top_speed = ps_fan_speed.top;
+    g_setting.fans.auto_mode = ps_fans_auto_mode;
+    fans_top_setspeed(ps_fan_speed.top);
+}
+
+void power_save_fans(bool minimum) {
+    if (!power_save_on || minimum == ps_fans_min)
+        return;
+    ps_fans_min = minimum;
+    if (minimum) {
+        g_setting.fans.top_speed = MIN_FAN_TOP;
+        g_setting.fans.left_speed = MIN_FAN_SIDE;
+        g_setting.fans.right_speed = MIN_FAN_SIDE;
+        g_setting.fans.auto_mode = 0;
+        fans_top_setspeed(MIN_FAN_TOP);
+        fans_left_setspeed(MIN_FAN_SIDE);
+        fans_right_setspeed(MIN_FAN_SIDE);
+    } else {
+        g_setting.fans.right_speed = ps_fan_speed.right;
+        g_setting.fans.left_speed = ps_fan_speed.left;
+        fans_right_setspeed(ps_fan_speed.right);
+        fans_left_setspeed(ps_fan_speed.left);
+        g_setting.fans.top_speed = ps_fan_speed.top;
+        g_setting.fans.auto_mode = ps_fans_auto_mode;
+        fans_top_setspeed(ps_fan_speed.top);
+    }
+}
