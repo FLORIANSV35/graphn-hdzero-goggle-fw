@@ -59,13 +59,6 @@
 #define TOOLS_ROW_COUNT 6
 #endif
 
-#ifdef RSSI_SCAN_ANALOG
-#define TOOLS_NOTE_ACTIONS \
-    "Click Focus Chart, Frequency Chart or RSSI Scanner to display it fullscreen, click again to dismiss. Scan Page makes the Scan entry open the RSSI Scanner."
-#else
-#define TOOLS_NOTE_ACTIONS "Click Focus Chart or Frequency Chart to display it fullscreen, click again to dismiss."
-#endif
-
 #define SWATCH_COUNT 4
 
 #define RSSI_SCAN_CH_MAX 300 // 48 channels, or up to (5945-5361)/2+1 = 293 points in 2 MHz mode
@@ -434,6 +427,52 @@ static void hide_chart(void) {
     chart_open = false;
 }
 
+static lv_obj_t *note_label;
+
+// One short note for the selected row only, instead of every row's note at
+// once, to leave room on the page.
+static void update_note(int sel) {
+    const char *text = "";
+
+    switch (sel) {
+    case ROW_FOCUS_CHART:
+    case ROW_FREQ_CHART:
+        text = "Click to display it fullscreen, click again to dismiss.";
+        break;
+#ifdef RSSI_SCAN_ANALOG
+    case ROW_RSSI_SCAN:
+        text = "Sweeps the analog channels with the built-in receiver and charts the signal strength. Click again to stop.";
+        break;
+    case ROW_RSSI_RANGE:
+        text = "Frequency range swept: Full, Lowband or Standard (E1 to E8).";
+        break;
+    case ROW_RSSI_STEP:
+        text = "Channels: one point per channel. Coarse 4 MHz and Fine 2 MHz sweep every frequency, slower.";
+        break;
+    case ROW_SCAN_PAGE:
+        text = "What the Scan entry does: its normal scan, or open the RSSI Scanner instead.";
+        break;
+#endif
+#ifndef HDZBOXPRO
+    case ROW_THEME:
+        text = "Click to switch theme. Restart the goggles to apply the new theme.";
+        break;
+#endif
+    default:
+        break;
+    }
+    if (note_label)
+        lv_label_set_text(note_label, _lang(text));
+}
+
+static void page_tools_enter(void) {
+    update_note(pp_tools.p_arr.cur);
+}
+
+static void page_tools_on_roller(uint8_t key) {
+    update_note(pp_tools.p_arr.cur);
+}
+
 static lv_obj_t *page_tools_create(lv_obj_t *parent, panel_arr_t *arr) {
     char buf[128];
     lv_obj_t *page = lv_menu_page_create(parent, NULL);
@@ -505,10 +544,6 @@ static lv_obj_t *page_tools_create(lv_obj_t *parent, panel_arr_t *arr) {
 
     lv_obj_t *note = lv_label_create(cont);
     int note_row = TOOLS_ROW_COUNT;
-    // Wider than buf: the combined note sentences run past 128 bytes and
-    // snprintf into the shared buf silently truncated mid-sentence.
-    char note_buf[512];
-
 #ifndef HDZBOXPRO
     // Row 3 (colour swatches) is decorative, not a real entry.
     lv_obj_clear_flag(pp_tools.p_arr.panel[ROW_SWATCHES], FLAG_SELECTABLE);
@@ -527,19 +562,13 @@ static lv_obj_t *page_tools_create(lv_obj_t *parent, panel_arr_t *arr) {
                              LV_GRID_ALIGN_CENTER, ROW_SWATCHES, 1);
     }
 
-    snprintf(note_buf, sizeof(note_buf), "%s\n%s\n%s",
-             _lang(TOOLS_NOTE_ACTIONS),
-             _lang("Click Theme to switch theme."),
-             _lang("Restart the goggles to apply the new theme."));
-
     preview_idx = g_setting.ui_theme;
     show_preview(preview_idx);
-#else
-    snprintf(note_buf, sizeof(note_buf), "%s",
-             _lang(TOOLS_NOTE_ACTIONS));
 #endif
 
-    lv_label_set_text(note, note_buf);
+    // Only the note of the selected row is shown (see update_note()).
+    note_label = note;
+    lv_label_set_text(note, ""); // a new label reads "Text" by default
     lv_obj_set_style_text_font(note, UI_PAGE_LABEL_FONT, 0);
     lv_obj_set_style_text_align(note, LV_TEXT_ALIGN_LEFT, 0);
     lv_obj_set_style_text_color(note, lv_color_hex(TEXT_COLOR_DEFAULT), 0);
@@ -679,6 +708,7 @@ void tools_rssi_scan_close(void) {
 
 static void page_tools_exit(void) {
     hide_chart();
+    update_note(-1);
 #ifdef RSSI_SCAN_ANALOG
     stop_rssi_scan();
 #endif
@@ -755,11 +785,11 @@ page_pack_t pp_tools = {
     },
     .name = "Tools",
     .create = page_tools_create,
-    .enter = NULL,
+    .enter = page_tools_enter,
     .exit = page_tools_exit,
     .on_created = NULL,
     .on_update = page_tools_on_update,
-    .on_roller = NULL,
+    .on_roller = page_tools_on_roller,
     .on_click = page_tools_on_click,
     .on_right_button = NULL,
 };
