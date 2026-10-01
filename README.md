@@ -104,6 +104,14 @@ A configurable low-space warning (Storage page, "Low Space Alert" slider, 1.0–
 - a "LOW SD SPACE" OSD banner while watching video — a normal OSD element, so it can be repositioned or
   hidden from OSD → Adjust OSD Elements like any other.
 
+### SD package
+
+Optional files that are not bundled in the firmware, to keep the app partition small. Copy the contents of
+[sd-package/](sd-package/) to the root of the SD card:
+
+- `dvr_playback_volume_test.wav`: the 10 s sample played by Audio → DVR playback test. Without it that test
+  plays nothing; the other audio tests are not affected.
+
 ### Firmware update page
 
 A failed update now shows the actual error from the on-device update script (corrupt archive, missing

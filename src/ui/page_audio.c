@@ -23,7 +23,6 @@
 #define DVR_AUDIO_VOLUME_MAX 8
 #define LIVE_AUDIO_VOLUME_MAX 10
 #define RECORD_GAIN_MAX 7
-#define AUDIO_TEST_SAMPLE "/mnt/app/app/audio/dvr_playback_volume_test.wav"
 #define AUDIO_TEST_SAMPLE_SDCARD "/mnt/extsd/dvr_playback_volume_test.wav"
 #define AUDIO_TEST_CAPTURE "/tmp/hdzero_audio_test.wav"
 #define AUDIO_TEST_APLAY "/mnt/app/app/record/audio/aplay"
@@ -510,9 +509,9 @@ static void page_audio_disable_dac_playback(bool live_audio_was_enabled) {
 }
 
 static const char *page_audio_test_sample_path(void) {
-    if (fs_file_exists(AUDIO_TEST_SAMPLE_SDCARD))
-        return AUDIO_TEST_SAMPLE_SDCARD;
-    return AUDIO_TEST_SAMPLE;
+    // Not bundled in the firmware (saves 1.8MB of the app partition): it
+    // ships in the SD package, copy dvr_playback_volume_test.wav to the SD root.
+    return fs_file_exists(AUDIO_TEST_SAMPLE_SDCARD) ? AUDIO_TEST_SAMPLE_SDCARD : NULL;
 }
 
 static const char *page_audio_capture_path(void) {
@@ -591,7 +590,8 @@ static void *page_audio_test_thread(void *arg) {
         page_audio_enable_dac_playback();
         audio_test_phase_duration_ms = AUDIO_TEST_DVR_SAMPLE_MS;
         audio_test_phase = AUDIO_TEST_PHASE_PLAYING;
-        page_audio_play_wav(page_audio_test_sample_path());
+        if (page_audio_test_sample_path())
+            page_audio_play_wav(page_audio_test_sample_path());
         page_audio_disable_dac_playback(live_audio_was_enabled);
         break;
     }
