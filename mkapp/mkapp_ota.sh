@@ -54,6 +54,16 @@ fi
 
 echo "${APP_VERSION}" > ${APP_DIR}/version
 
+# Tools charts: page_tools.c shows the 1080p image on G1/G2 and the 720p one on
+# the Box Pro, never both. Drop the one this platform doesn't use (the build
+# copies mkapp/ first, so the source tree is untouched).
+OSD_GOGGLE_DIR=$APP_DIR/resource/OSD/GOGGLE
+if [ $PLATFORM == "HDZBOXPRO" ]; then
+    rm -f $OSD_GOGGLE_DIR/FHD/focus_chart.png $OSD_GOGGLE_DIR/FHD/freq_chart.png
+else
+    rm -f $OSD_GOGGLE_DIR/focus_chart.png $OSD_GOGGLE_DIR/freq_chart.png
+fi
+
 rm -rf $IMG_DIR
 mkdir -p $IMG_DIR
 
