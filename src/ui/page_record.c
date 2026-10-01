@@ -152,6 +152,8 @@ static lv_obj_t *page_record_create(lv_obj_t *parent, panel_arr_t *arr) {
 
     lv_obj_set_style_grid_column_dsc_array(cont, col_dsc, 0);
     lv_obj_set_style_grid_row_dsc_array(cont, row_dsc, 0);
+    // Thinner rows with a tighter gap so all twelve rows and the note fit on screen.
+    lv_obj_set_style_pad_row(cont, 6, 0);
 
     create_select_item(arr, cont);
 
@@ -176,17 +178,22 @@ static lv_obj_t *page_record_create(lv_obj_t *parent, panel_arr_t *arr) {
     create_label_item(cont, buf, 1, ROW_BACK, 1);
 
     lv_obj_t *note = lv_label_create(cont);
-    snprintf(buf, sizeof(buf), "%s.\n%s.",
+    // The two note sentences together run past buf's 256 bytes, which silently
+    // cut the text mid-sentence.
+    char note_buf[512];
+    snprintf(note_buf, sizeof(note_buf), "%s.\n%s.",
              _lang("CBR keeps file size steady but quality varies with scene complexity; VBR treats bitrate as a ceiling for steadier quality and smaller files, with higher write peaks"),
              _lang("VBR Quality uses the encoder scale 0-13; Max QP is the quality floor (lower is better but creates larger files), and 40 is the suggested value"));
-    lv_label_set_text(note, buf);
+    lv_label_set_text(note, note_buf);
     lv_obj_set_style_text_font(note, UI_PAGE_LABEL_FONT, 0);
     lv_obj_set_style_text_align(note, LV_TEXT_ALIGN_LEFT, 0);
     lv_obj_set_style_text_color(note, lv_color_hex(TEXT_COLOR_DEFAULT), 0);
-    lv_obj_set_style_pad_top(note, UI_PAGE_TEXT_PAD, 0);
+    lv_obj_set_style_pad_top(note, 2, 0);
     lv_label_set_long_mode(note, LV_LABEL_LONG_WRAP);
-    lv_obj_set_grid_cell(note, LV_GRID_ALIGN_START, 1, 4,
-                         LV_GRID_ALIGN_START, ROW_RECORD_NOTE, 2);
+    // Stretch across its columns so the long text wraps inside them instead of
+    // running off the right edge of the screen.
+    lv_obj_set_grid_cell(note, LV_GRID_ALIGN_STRETCH, 1, 4,
+                         LV_GRID_ALIGN_STRETCH, ROW_RECORD_NOTE, 2);
     lv_obj_clear_flag(arr->panel[ROW_RECORD_NOTE], FLAG_SELECTABLE);
 
     btn_group_set_sel(&btn_group_record_mode, g_setting.record.mode_manual ? 1 : 0);
