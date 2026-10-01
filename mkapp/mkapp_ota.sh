@@ -11,7 +11,7 @@ function get_app_version() {
     # its own at the start of each month -- no counter to maintain by hand).
     local yy=$(date +%y)
     local mm=$(date +%m)
-    local nn=$(printf "%02d" "$(git log --since="$(date +%Y-%m-01)" --oneline | wc -l)")
+    local nn=$(printf "%02d" "$(git log --since="$(date +%Y-%m-01) 00:00" --oneline | wc -l)")
     local base_version="${yy}.${mm}.${nn}-graphn"
 
     # check if we are on a tag
