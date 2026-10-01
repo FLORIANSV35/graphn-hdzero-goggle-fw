@@ -756,13 +756,12 @@ static void toggle_favorite(int const seq) {
         mark_video_file(seq);
 }
 
-// The helper binary and, deliberately, its log + result + progress files --
-// on the SD card (not /tmp, which is on internal storage the SD card
-// doesn't expose) so a failure can actually be diagnosed by pulling the card.
+// The helper binary and its log + result + progress files (in /tmp, so the
+// SD card root stays clean).
 #define TS2MP4_BIN           "/mnt/app/app/record/ts2mp4"
-#define TS2MP4_LOG_FILE      REC_diskPATH "/ts2mp4.log"
-#define TS2MP4_RESULT_FILE   REC_diskPATH "/ts2mp4.result"
-#define TS2MP4_PROGRESS_FILE REC_diskPATH "/ts2mp4.progress"
+#define TS2MP4_LOG_FILE      "/tmp/ts2mp4.log"
+#define TS2MP4_RESULT_FILE   "/tmp/ts2mp4.result"
+#define TS2MP4_PROGRESS_FILE "/tmp/ts2mp4.progress"
 
 // Three short beeps, evenly spaced -- beep_dur() just signals a single-slot
 // beeper thread (see driver/beep.c), so calling it back-to-back without a
@@ -862,7 +861,7 @@ static void *convert_thread(void *arg) {
     }
     update_page();
     page_playback_open_status_box(ok ? "Converted" : "Conversion failed",
-                                   ok ? "Saved as .mp4." : "Could not convert this clip.\nSee ts2mp4.log at the SD card root.");
+                                   ok ? "Saved as .mp4." : "Could not convert this clip.");
     status_deleting = true; // dismissible via RIGHT_KEY_CLICK/PRESS
     status_is_delete_confirm = false;
     pthread_mutex_unlock(&lvgl_mutex);
@@ -916,8 +915,8 @@ static void start_convert(int const seq) {
     }
 }
 
-#define TS2MP4_INFO_FILE        REC_diskPATH "/ts2mp4.info"
-#define TS2MP4_INFO_RESULT_FILE REC_diskPATH "/ts2mp4.info.result"
+#define TS2MP4_INFO_FILE        "/tmp/ts2mp4.info"
+#define TS2MP4_INFO_RESULT_FILE "/tmp/ts2mp4.info.result"
 
 // Matches ts2mp4/main.c's DVR_VIDEO_WIDTH/HEIGHT (a separate process/binary,
 // so not literally shared) -- every DVR clip is this fixed resolution.
