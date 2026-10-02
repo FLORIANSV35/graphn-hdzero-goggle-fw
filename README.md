@@ -34,9 +34,12 @@ video flash before the menu could appear). `Boot` and `Scan` behave as before, j
 
 ### ELRS backpack dial control
 
-With the external Expansion analog bay active, the dial now sends channel changes over the ELRS backpack
-instead of the internal analog VRX. The current-channel indicator shows the last channel the backpack
-reported, rather than the internal VRX's own channel.
+With the external Expansion analog module active (Goggle 2, and Goggle 1, which has no built-in analog
+receiver: its Analog source is always the Expansion module), the dial now selects a channel and sends it to the VTX
+over the ELRS backpack instead of tuning an internal analog VRX. Nothing is tuned on the goggle and the DVR
+is not interrupted. The current-channel indicator shows the last channel the backpack reported (or that was
+sent), rather than an internal VRX's own channel. The Box Pro, which has a built-in analog receiver, still
+tunes it and sends the channel to the VTX.
 
 **VTX control requires this backpack:** to control the VTX from the goggles ("Send VTX"), flash the
 **HDZero Goggles Backpack x.x.x-graphn** release of

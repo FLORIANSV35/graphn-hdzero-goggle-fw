@@ -205,14 +205,18 @@ static void change_channel_analog(uint8_t const channel) {
         LOGE("Invalid analog channel %d", channel);
         return;
     }
-#if defined(HDZGOGGLE2)
-    // Expansion module: the goggle cannot tune it, so the last channel the
-    // backpack reported is the best knowledge of what it is receiving. Record
+#if defined(HDZGOGGLE) || defined(HDZGOGGLE2)
+    // Expansion module (Goggle 2, and Goggle 1, which has no Built-in
+    // receiver): the goggle cannot tune it, so the last channel the backpack
+    // reported is the best knowledge of what it is receiving. Record
     // it (for the channel OSD and MSP_GET_BAND_CHAN) without touching the
     // Built-in receiver, the DVR or the video path. Dual always drives the
     // Built-in receiver, so it still applies normally.
+#if defined(HDZGOGGLE2)
     if (g_setting.source.analog_module == SETTING_SOURCES_ANALOG_MODULE_EXTERNAL &&
-        !g_setting.source.auto_protocol_detect) {
+        !g_setting.source.auto_protocol_detect)
+#endif
+    {
         if (g_setting.source.analog_channel != channel) {
             g_setting.source.analog_channel = channel;
             ini_putl("source", "analog_channel", g_setting.source.analog_channel, SETTING_INI);
@@ -398,7 +402,7 @@ void msp_process_packet() {
                                       (uint8_t)entry->hdz_channel + 1);
                 applied = true;
             }
-#if defined(HDZBOXPRO) || defined(HDZGOGGLE2)
+#if defined(HDZGOGGLE) || defined(HDZBOXPRO) || defined(HDZGOGGLE2)
             if (!applied && g_setting.source.auto_protocol_detect &&
                 entry && entry->analog_channel >= 0) {
                 // Auto Detect: an analog-capable frequency with no HDZero
@@ -454,7 +458,7 @@ void msp_process_packet() {
                                       (uint8_t)entry->hdz_channel + 1);
                 applied = true;
             }
-#if defined(HDZBOXPRO) || defined(HDZGOGGLE2)
+#if defined(HDZGOGGLE) || defined(HDZBOXPRO) || defined(HDZGOGGLE2)
             if (!applied && g_setting.source.auto_protocol_detect &&
                 entry && entry->analog_channel >= 0) {
                 // Auto Detect: analog-capable frequency, no HDZero channel.

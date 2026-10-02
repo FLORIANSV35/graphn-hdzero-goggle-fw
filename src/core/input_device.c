@@ -252,12 +252,7 @@ void tune_channel(uint8_t action) {
     if (osd_is_detecting())
         return;
 
-#if defined HDZGOGGLE
-    if (g_source_info.source != SOURCE_HDZERO) {
-        return;
-    }
-
-#elif defined(HDZBOXPRO) || defined(HDZGOGGLE2)
+#if defined(HDZGOGGLE) || defined(HDZBOXPRO) || defined(HDZGOGGLE2)
     if (g_source_info.source != SOURCE_HDZERO && g_source_info.source != SOURCE_AV_MODULE) {
         return;
     }
@@ -410,7 +405,7 @@ void tune_channel(uint8_t action) {
                 channel = (uint8_t)(hdz_band_ch_to_flat(
                               g_setting.source.hdzero_band,
                               g_setting.scan.channel) + 1);
-#if defined(HDZBOXPRO) || defined(HDZGOGGLE2)
+#if defined(HDZGOGGLE) || defined(HDZBOXPRO) || defined(HDZGOGGLE2)
             } else if (g_source_info.source == SOURCE_AV_MODULE) {
                 channel = g_setting.source.analog_channel;
 #endif
@@ -482,14 +477,18 @@ void tune_channel(uint8_t action) {
             if (g_setting.source.analog_channel != channel) {
                 g_setting.source.analog_channel = channel;
                 ini_putl("source", "analog_channel", g_setting.source.analog_channel, SETTING_INI);
-#if defined(HDZGOGGLE2)
-                // Expansion module: the dial only selects the frequency sent to
-                // the VTX through the ELRS backpack. The Built-in receiver is
-                // powered down and must not be tuned (nor the DVR interrupted).
-                if (!(g_setting.source.analog_module == SETTING_SOURCES_ANALOG_MODULE_EXTERNAL &&
-                      !g_setting.source.auto_protocol_detect))
+                // Expansion module (Goggle 2) / external analog module (Goggle 1, which has no
+                // Built-in receiver): the dial only selects the frequency sent to the VTX through
+                // the ELRS backpack. There is nothing to tune on the goggle, so the Built-in
+                // receiver is left alone and the DVR is not interrupted.
+                bool tune_builtin = true;
+#if defined(HDZGOGGLE)
+                tune_builtin = false;
+#elif defined(HDZGOGGLE2)
+                tune_builtin = !(g_setting.source.analog_module == SETTING_SOURCES_ANALOG_MODULE_EXTERNAL &&
+                                 !g_setting.source.auto_protocol_detect);
 #endif
-                {
+                if (tune_builtin) {
                     dvr_cmd(DVR_STOP);
                     rtc6715.set_ch(g_setting.source.analog_channel - 1);
                 }
@@ -534,6 +533,8 @@ void tune_channel(uint8_t action) {
 void tune_channel_confirm() {
 #if defined HDZGOGGLE
     if (g_source_info.source == SOURCE_HDZERO) {
+        tune_channel(DIAL_KEY_CLICK);
+    } else if (g_source_info.source == SOURCE_AV_MODULE) {
         tune_channel(DIAL_KEY_CLICK);
     }
 #elif defined HDZBOXPRO
@@ -615,6 +616,8 @@ void btn_press(void) // long press left key
         if (tune_timer) {
 #if defined HDZGOGGLE
             if (g_source_info.source == SOURCE_HDZERO) {
+                tune_channel(DIAL_KEY_PRESS);
+            } else if (g_source_info.source == SOURCE_AV_MODULE) {
                 tune_channel(DIAL_KEY_PRESS);
             } else {
                 (*btn_press_callback)();

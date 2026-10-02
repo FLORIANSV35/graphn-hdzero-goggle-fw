@@ -558,9 +558,9 @@ void osd_channel_show(bool bShow) {
         if (g_source_info.source == SOURCE_HDZERO) {
             ch = g_setting.scan.channel & 0x7F;
         } else {
-#if defined(HDZGOGGLE2) || defined(HDZBOXPRO)
+#if defined(HDZGOGGLE) || defined(HDZGOGGLE2) || defined(HDZBOXPRO)
             if (g_source_info.source == SOURCE_AV_MODULE) {
-                // Expansion module: analog_channel is the last channel seen by
+                // Expansion / external analog module: analog_channel is the last channel seen by
                 // the backpack (received or sent), shown as such.
                 {
                     ch = g_setting.source.analog_channel & 0x7F;
@@ -568,8 +568,6 @@ void osd_channel_show(bool bShow) {
             } else {
                 bShow = false;
             }
-#elif defined(HDZGOGGLE)
-            bShow = false;
 #endif
         }
 
