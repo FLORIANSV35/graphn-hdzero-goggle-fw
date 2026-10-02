@@ -469,7 +469,7 @@
         if (r.state === "fast") { $("player").classList.remove("convonly"); showBar(null); st.textContent = ""; onFast(); }
         else if (r.state === "ready") { it.l = 1; play(); }
         else if (r.state === "working") {
-          st.textContent = (auto ? "More than 30 images per second" + (r.info ? " (" + r.info + ")" : "") + ": the goggle makes a light copy for the WiFi... " : "The goggle is making the light copy... ") + (r.percent || 0) + " %";
+          st.textContent = (auto ? "More than 30 images per second" + (r.info ? ", " + r.info : "") + ": the goggle makes a light copy for the WiFi... " : "The goggle is making the light copy... ") + (r.percent || 0) + " %";
           showBar(r.percent || 0);
           lightTimer = setTimeout(poll, 1500);
         } else if (r.state === "busy") {

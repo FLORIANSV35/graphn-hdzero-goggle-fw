@@ -46,9 +46,8 @@
 #define ROW_TEMPERATURE 7
 #ifndef HDZBOXPRO
 #define ROW_THEME    8
-#define ROW_SWATCHES 9
-#define ROW_BACK     10
-#define TOOLS_ROW_COUNT 11
+#define ROW_BACK     9
+#define TOOLS_ROW_COUNT 10
 #else
 // Box Pro never offered the Theme page (ui_main_menu.c used to gate it out
 // with #if !defined(HDZBOXPRO)); keep that behaviour here.
@@ -58,12 +57,13 @@
 #else
 #define ROW_TEMPERATURE 3
 #define ROW_THEME       4
-#define ROW_SWATCHES    5
-#define ROW_BACK        6
-#define TOOLS_ROW_COUNT 7
+#define ROW_BACK        5
+#define TOOLS_ROW_COUNT 6
 #endif
 
 #define SWATCH_COUNT 4
+#define SWATCH_DOT 30 // diameter of a colour dot
+#define SWATCH_GAP 14
 
 #define RSSI_SCAN_CH_MAX 300 // 48 channels, or up to (5945-5361)/2+1 = 293 points in 2 MHz mode
 
@@ -672,21 +672,27 @@ static lv_obj_t *page_tools_create(lv_obj_t *parent, panel_arr_t *arr) {
     lv_obj_t *note = lv_label_create(cont);
     int note_row = TOOLS_ROW_COUNT;
 #ifndef HDZBOXPRO
-    // Row 3 (colour swatches) is decorative, not a real entry.
-    lv_obj_clear_flag(pp_tools.p_arr.panel[ROW_SWATCHES], FLAG_SELECTABLE);
-
     create_label_item(cont, _lang("Theme"), 1, ROW_THEME, 1);
     label_name = create_label_item(cont, "", 2, ROW_THEME, 3);
 
+    // The picked theme's colours as round dots, to the right of its name.
+    lv_obj_t *dots = lv_obj_create(cont);
+    lv_obj_clear_flag(dots, LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_size(dots, 4 * (SWATCH_DOT + SWATCH_GAP), SWATCH_DOT + 4);
+    lv_obj_set_style_bg_opa(dots, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(dots, 0, 0);
+    lv_obj_set_style_pad_all(dots, 0, 0);
+    lv_obj_set_layout(dots, LV_LAYOUT_FLEX);
+    lv_obj_set_flex_flow(dots, LV_FLEX_FLOW_ROW);
+    lv_obj_set_style_pad_column(dots, SWATCH_GAP, 0);
+    lv_obj_set_grid_cell(dots, LV_GRID_ALIGN_START, 4, 2, LV_GRID_ALIGN_CENTER, ROW_THEME, 1);
     for (int i = 0; i < SWATCH_COUNT; i++) {
-        swatch[i] = lv_obj_create(cont);
+        swatch[i] = lv_obj_create(dots);
         lv_obj_clear_flag(swatch[i], LV_OBJ_FLAG_SCROLLABLE);
-        lv_obj_set_size(swatch[i], 100, 36);
-        lv_obj_set_style_radius(swatch[i], 0, 0);
+        lv_obj_set_size(swatch[i], SWATCH_DOT, SWATCH_DOT);
+        lv_obj_set_style_radius(swatch[i], LV_RADIUS_CIRCLE, 0);
         lv_obj_set_style_border_width(swatch[i], 1, 0);
         lv_obj_set_style_border_color(swatch[i], lv_color_hex(0x808080), 0);
-        lv_obj_set_grid_cell(swatch[i], LV_GRID_ALIGN_START, 2 + i, 1,
-                             LV_GRID_ALIGN_CENTER, ROW_SWATCHES, 1);
     }
 
     preview_idx = g_setting.ui_theme;

@@ -70,7 +70,7 @@ case "$QUERY_STRING" in
     fps=${fps:-0}
     decl=$(echo "$probe" | sed -n 's/^declared=//p')
     meas=$(echo "$probe" | sed -n 's/^measured=//p')
-    info="${fps} (container ${decl:-0}, measured ${meas:-0})"
+    info="detected ${fps} images/s (container ${decl:-0}, measured ${meas:-0})"
     if [ "$fps" -gt 0 ] && [ "$fps" -le 30 ]; then reply "{\"state\":\"fast\",\"fps\":$fps,\"info\":\"$info\"}"; fi
     ;;
 esac

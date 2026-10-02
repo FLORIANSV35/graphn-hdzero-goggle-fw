@@ -72,6 +72,8 @@ Sarcelle, Monochrome). The selected theme is applied after restarting the goggle
 
 One "Tools" page groups small utilities that used to be separate menu entries or didn't exist:
 
+- **WiFi Share** (first row): starts a WiFi hotspot and a web portal to browse, watch and download the
+  DVR clips from a phone (see [WiFi Share and web portal](#wifi-share-and-web-portal)).
 - **Focus Chart**: fullscreen focus test pattern. Click again to dismiss.
 - **Frequency Chart**: fullscreen reference of the 5.8 GHz band plans on a linear frequency axis: the
   analog bands A, B, E, F/I and R, and the digital D, J, O and Q plans of the Walksnail / DJI systems. Each
@@ -94,6 +96,67 @@ One "Tools" page groups small utilities that used to be separate menu entries or
 [![Tools demo: charts, RSSI Scanner, temperature and theme](docs/videos/tools-demo.jpg)](docs/videos/tools-demo.mp4)
 
 *Click the picture to watch the demo (mp4, 2 min 12).*
+
+### WiFi Share and web portal
+
+The goggle can share its DVR clips over its own WiFi: pick **Tools > WiFi Share**, join the goggle's network
+from a phone or a PC, and open the portal in a browser.
+
+| Tools page | Share window |
+|---|---|
+| ![Tools page with the WiFi Share row](docs/wifi-share/goggle-tools.png) | ![WiFi share window](docs/wifi-share/goggle-share.png) |
+
+1. **Tools > WiFi Share**. The goggle starts its hotspot (WPA2) and the portal, and shows a window with the
+   network name, the password and the address to open.
+2. On the phone, join that WiFi, then open **http://192.168.2.122** (the address shown in the window; this is
+   the default). There is no automatic sign-in page: the address has to be typed.
+3. The window also shows the battery, the temperatures and the conversion in progress, if any.
+4. Click the button in the window to end the share. Leaving the menu ends it too.
+
+What the share does to the goggle:
+
+- It saves power while it runs: the receivers and the DVR are switched off, the screen is dimmed and the
+  fans go to their minimum (back to normal speed while a conversion runs).
+- It is independent of **WiFi Module**: that page (live view over RTSP, SSH) keeps its own settings, and a
+  share never changes them. When the share ends, the WiFi goes back to the state the module had before.
+
+#### The portal
+
+| Clips | Light copy in progress | Playing the light copy |
+|---|---|---|
+| ![Portal: clip list](docs/wifi-share/portal-list.png) | ![Portal: making a light copy](docs/wifi-share/portal-light-copy.png) | ![Portal: playing the light copy](docs/wifi-share/portal-play.png) |
+
+- The list shows a thumbnail per clip, newest first, two per row on a phone. A star marks the favourites
+  (the `Favorites/` folder) and the **Favorites** button filters on them. The date strip on the right works
+  like the Playback page's: tap a day to jump to it.
+- **Play** plays the clip in the page. **Test link speed** measures what the WiFi really gives; the module
+  is a small chip (about 18 Mbit/s), a DVR clip needs 20 to 35 Mbit/s, so a warning appears when a clip is
+  too heavy to play without pauses.
+- **What Play does depends on the clip:**
+  - `.ts` of 30 images/s or less: converted to `.mp4` (index at the start, `hvc1` tag so that iPhones and
+    Safari play it), then played. The `.ts` is deleted once the `.mp4` is checked.
+  - `.ts` of more than 30 images/s: a **light copy** is made, then played.
+  - `.mp4` of 30 images/s or less: played as it is.
+  - `.mp4` of more than 30 images/s: a **light copy** is made, then played.
+- **MP4** (on `.ts` clips) converts without playing, so that the clip can then be downloaded; the arrow
+  button downloads the original file. A triple beep on the goggle ends a conversion.
+- The page's header shows the firmware version and a build stamp, to check which version is served.
+
+#### Light copies
+
+A clip above 30 images/s (60 or 90 fps DVR) is too heavy for the WiFi. The goggle then makes a **light
+copy**: its video hardware decodes the clip and encodes it again at 30 images/s or less and about 8 Mbit/s,
+and the audio is copied. The progress bar and the detected frame rate (as declared by the file, and as measured
+on its time stamps) are shown on the page. It takes about half of the clip's duration.
+
+- The original is never changed. **Download** always gives the original file, and **Play the original
+  instead** plays it.
+- Light copies are in a `Light/` folder of the DVR folder, which the Playback page and the rolling recorder
+  ignore. A clip that has one shows a **LIGHT** mark in the portal.
+- A light copy that has not been watched for 3 weeks is removed. Playing one renews its date.
+- **Storage > Clear Light DVR** removes all of them at once (the originals are not touched).
+
+![Storage page with Clear Light DVR](docs/wifi-share/goggle-storage.png)
 
 ### Low SD card space alert
 
