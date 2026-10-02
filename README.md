@@ -38,10 +38,21 @@ With the external Expansion analog bay active, the dial now sends channel change
 instead of the internal analog VRX. The current-channel indicator shows the last channel the backpack
 reported, rather than the internal VRX's own channel.
 
-**VTX control requires this backpack:** to control the VTX from the goggles, use the
-[FLORIANSV35/Backpack](https://github.com/FLORIANSV35/Backpack) firmware (a fork of the
-[ExpressLRS Backpack](https://github.com/ExpressLRS/Backpack)) on the backpack. The stock ExpressLRS
-Backpack is not enough for VTX control with this firmware.
+**VTX control requires this backpack:** to control the VTX from the goggles ("Send VTX"), flash the
+**HDZero Goggles Backpack x.x.x-graphn** release of
+[FLORIANSV35/Backpack](https://github.com/FLORIANSV35/Backpack/releases) (a fork of the
+[ExpressLRS Backpack](https://github.com/ExpressLRS/Backpack)) on the goggles' built-in ESP32 backpack. The
+stock ExpressLRS Backpack is not enough for VTX control with this firmware.
+
+- Take the release named **HDZero Goggles Backpack x.x.x-graphn** (currently
+  [1.5.9-graphn](https://github.com/FLORIANSV35/Backpack/releases/tag/graphn-hdz-bkpk-1.5.9-graphn)), not the
+  *Rapidfire Backpack* one listed next to it, which is for another receiver.
+- It ships two files, `hdzero-goggle.vrx.esp32.wifi.bin` (Goggle, Goggle 2) and
+  `hdzero-boxpro.vrx.esp32.wifi.bin` (Box Pro). They are identical firmware; flash the one for your goggles
+  through the WiFi OTA update.
+- It is built **without a binding phrase**: after flashing, bind it yourself, as with any ExpressLRS backpack
+  (enter your binding phrase on the backpack's WiFi configuration page, or use the bind button). Until then
+  it will not pair with your TX module or goggles.
 
 ### Theme system
 
