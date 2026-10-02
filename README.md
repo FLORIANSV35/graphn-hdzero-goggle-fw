@@ -7,11 +7,15 @@ Private fork of the HDZero goggles firmware (Goggle, Goggle2, BoxPro), built and
 This is an unofficial, community build. It is provided **as is, without any warranty**, and it is **not
 supported by HDZero**. Flashing it is done entirely **at your own risk**.
 
-- The authors of this fork are **not responsible** for any damage, malfunction or loss of use resulting from
-  it — including goggles that fail to boot, hang on the boot logo, or end up bricked.
+- The author of this fork is **in no way responsible** for any **hardware damage** (goggles, battery, SD
+  card, antennas, or anything connected to them) or any **software lock-up** (goggles that fail to boot,
+  hang on the boot logo, loop, or end up bricked), nor for any data lost (recordings, settings, SD card
+  content), or any other loss or consequence resulting from installing or using this firmware, including its
+  WiFi Share, web portal and light copy features. You use it entirely at your own risk.
 - To go back to the official HDZero firmware if something goes wrong, you may have to reflash the goggles
-  with a **Phoenix Card** (HDZero's recovery tool). Have one available before you experiment, or make sure
-  you are comfortable without your goggles until you get one.
+  with a **Phoenix Card** (HDZero's recovery tool; see
+  [Emergency recovery with a PhoenixCard SD card](#emergency-recovery-with-a-phoenixcard-sd-card)). Have one
+  available before you experiment, or make sure you are comfortable without your goggles until you get one.
 - Don't flash while the battery is low, and never power off or unplug the goggles during an update.
 
 ## Changes in this fork
@@ -279,6 +283,45 @@ else
 	/mnt/app/app/HDZGOGGLE &
 fi
 ```
+
+### Emergency recovery with a PhoenixCard SD card
+
+If the goggle no longer boots, or a flash left it unusable, it can be recovered with a bootable SD card made
+with the **PhoenixCard** app. This is HDZero's official procedure ("Goggle Emergency Firmware Update Process
+using Phoenix App", for all versions); the original page, with the figures it refers to, is
+[here](https://docs.hd-zero.com/goggles-firmware-update#goggle-emergency-firmware-update-process-using-phoenix-app-for-all-versions).
+
+You need:
+
+- a Windows machine
+- `PhoenixCard.zip`, from the HDZero download site
+- the latest firmware package from the HDZero download site (it contains `HDZGOGGLE_RX.bin` and
+  `HDZGOGGLE_VA.bin`)
+- an SD card
+
+Steps:
+
+1. Extract `PhoenixCard.zip` to a folder such as `C:\PhoenixCard`, and the firmware files to a local folder
+   such as `C:\Temp`. Launch `C:\PhoenixCard\PhoenixCard.exe`.
+2. Make a **bootable SD card** with PhoenixCard, following FIG.5 of the HDZero page.
+3. Eject the SD card from Windows and put it in the goggle.
+4. Unplug every cable (HDMI in/out, line in/out, AV in) and keep only the power cable. Power the goggle on:
+   a long beep comes immediately, and another one after about 3 minutes.
+5. After the second beep, power the goggle off and take the SD card out. Do not power the goggle on again
+   with it inside.
+6. **Restore the SD card from BOOT mode**, following FIG.6 of the HDZero page, then format it as FAT32 on
+   Windows.
+7. Copy `HDZGOGGLE_RX.bin` and `HDZGOGGLE_VA.bin` to the root of the SD card.
+8. Put the card back in the goggle, power it on and wait about 2 minutes for a long beep.
+9. Optionally, take the card out and check that the two files are gone: that confirms the flash.
+10. Power the goggle off, then on.
+
+> **Warning:** a bootable SD card has a hidden partition that Windows Explorer does not show, and a normal
+> format does not remove it. If step 6 is not followed exactly, **the goggle will brick every time it is
+> powered on with that card inside**. Do not rush through the steps or the timings.
+
+This restores the official firmware. To come back to this build afterwards, flash it the usual way (the
+`.bin` of your device from the SD card, as in the releases).
 
 ## Building the Emulator
 
