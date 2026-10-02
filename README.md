@@ -22,36 +22,42 @@ supported by HDZero**. Flashing it is done entirely **at your own risk**.
 
 ### What each device gets
 
-Compared with the upstream firmware this fork is based on (`LVTY-AI/hdzero-goggle`):
+Compared with the upstream firmware this fork is based on (`LVTY-AI/hdzero-goggle`). The **Box Pro** and the
+**Box Pro+** run the same firmware; the Box Pro+ has the WiFi module and the ESP32 ExpressLRS backpack
+(WiFi video streaming, ELRS channel/DVR/head-tracking sync, per
+[HDZero's product page](https://www.hd-zero.com/product-page/hdzero-boxpro-boxpro)), the Box Pro has neither,
+so the firmware hides the ELRS and WiFi pages on it.
 
-| Addition | Goggle 1 | Goggle 2 | Box Pro |
-|---|---|---|---|
-| **WiFi Share** (hotspot, share window, power saving) | ✅ | ✅ | ✅ (hidden on a non-Pro Box Pro) |
-| **Web portal** (list, thumbnails, favourites, dates, playback, download, MP4) | ✅ | ✅ | ✅ |
-| **Light copy** + **Clear Light DVR** (Storage) | ✅ | ✅ | ✅ |
-| **Tools** page (Focus Chart, Frequency Chart, Temperature) | ✅ | ✅ | ✅ (1 probe instead of 3) |
-| **Frequency Chart** (analog A, B, E, F/I, R and digital D, J, O, Q bands) | ✅ | ✅ | ✅ |
-| **RSSI Scanner** + **Scan Page** | — | ✅ | ✅ |
-| **Themes** (13) + round colour dots + pill-style menu | ✅ | ✅ | — |
-| **VTX control** through the ELRS backpack (sending the channel) | ✅ | ✅ | ✅ |
-| **Dial with the Expansion module**: selects the channel and sends it to the VTX, without tuning an internal receiver or interrupting the DVR | ✅ | ✅ | — (tunes its internal receiver) |
-| **Playback**: action menu (Favorite, MP4, Remove, Info), sort by date, favourites folder, month history | ✅ | ✅ | ✅ |
-| **.ts to .mp4 conversion** (index at the start, `hvc1`) | ✅ | ✅ | ✅ |
-| **Startup** in 3 steps (Scan / Boot / Menu) | ✅ | ✅ | ✅ |
-| **Low SD space alert** (beep, status bar, OSD banner) | ✅ | ✅ | ✅ |
-| **Firmware update page**: the real script error | ✅ | ✅ | ✅ |
-| **SD package** (the test WAV moved out of the firmware) | ✅ | ✅ | ✅ |
-| **Tools chart images** per platform, lighter PNGs | 1080p | 1080p | 720p |
-| **Version** `YY.MM.NN-graphn` | ✅ | ✅ | ✅ |
-| UI fixes (Power, Record, Clock, Head Tracker, sidebar) | ✅ | ✅ | ✅ |
-| **Tested on real hardware** | no | **yes** | no |
+| Addition | Goggle 1 | Goggle 2 | Box Pro | Box Pro+ |
+|---|---|---|---|---|
+| **WiFi Share** (hotspot, share window, power saving) | ✅ | ✅ | — (no WiFi module) | ✅ |
+| **Web portal** (list, thumbnails, favourites, dates, playback, download, MP4) | ✅ | ✅ | — | ✅ |
+| **Light copy** + **Clear Light DVR** (Storage) | ✅ | ✅ | — (Clear Light DVR is still in Storage) | ✅ |
+| **Tools** page (Focus Chart, Frequency Chart, Temperature) | ✅ | ✅ | ✅ (1 probe instead of 3) | ✅ (1 probe) |
+| **Frequency Chart** (analog A, B, E, F/I, R and digital D, J, O, Q bands) | ✅ | ✅ | ✅ | ✅ |
+| **RSSI Scanner** + **Scan Page** | — | ✅ | ✅ | ✅ |
+| **Themes** (13) + round colour dots + pill-style menu | ✅ | ✅ | — | — |
+| **VTX control** through the ELRS backpack (sending the channel) | ✅ | ✅ | — (no backpack) | ✅ |
+| **Dial with the Expansion module**: selects the channel and sends it to the VTX, without tuning an internal receiver or interrupting the DVR | ✅ | ✅ | — | — (tunes its internal receiver, then sends the channel) |
+| **Playback**: action menu (Favorite, MP4, Remove, Info), sort by date, favourites folder, month history | ✅ | ✅ | ✅ | ✅ |
+| **.ts to .mp4 conversion** (index at the start, `hvc1`) | ✅ | ✅ | ✅ | ✅ |
+| **Startup** in 3 steps (Scan / Boot / Menu) | ✅ | ✅ | ✅ | ✅ |
+| **Low SD space alert** (beep, status bar, OSD banner) | ✅ | ✅ | ✅ | ✅ |
+| **Firmware update page**: the real script error | ✅ | ✅ | ✅ | ✅ |
+| **SD package** (the test WAV moved out of the firmware) | ✅ | ✅ | ✅ | ✅ |
+| **Tools chart images** per platform, lighter PNGs | 1080p | 1080p | 720p | 720p |
+| **Version** `YY.MM.NN-graphn` | ✅ | ✅ | ✅ | ✅ |
+| UI fixes (Power, Record, Clock, Head Tracker, sidebar) | ✅ | ✅ | ✅ | ✅ |
+| **Tested on real hardware** | no | **yes** | no | no |
 
-- Only the Goggle 2 has been tested on real hardware, including the portal and the light copy. The Goggle 1
-  and the Box Pro were only checked in the emulator, and the Goggle 1's Expansion dial is written but not
-  tried.
-- On the Box Pro the DVR records at 720p60, so all its clips go through the light copy; this has not been
+- Only the Goggle 2 has been tested on real hardware, including the portal and the light copy. The Goggle 1,
+  the Box Pro and the Box Pro+ were only checked in the emulator, and the Goggle 1's Expansion dial is
+  written but not tried.
+- On the Box Pro+ the DVR records at 720p60, so all its clips go through the light copy; this has not been
   tried.
 - VTX control needs the backpack described under [ELRS backpack dial control](#elrs-backpack-dial-control).
+- Whether a Box Pro is a Box Pro+ is read from a hardware pin at boot (the firmware calls it "PRO" /
+  "NOT PRO"); I could not check which of the two names each state matches on a real unit.
 
 ### Startup
 
@@ -71,8 +77,8 @@ With the external Expansion analog module active (Goggle 2, and Goggle 1, which 
 receiver: its Analog source is always the Expansion module), the dial now selects a channel and sends it to the VTX
 over the ELRS backpack instead of tuning an internal analog VRX. Nothing is tuned on the goggle and the DVR
 is not interrupted. The current-channel indicator shows the last channel the backpack reported (or that was
-sent), rather than an internal VRX's own channel. The Box Pro, which has a built-in analog receiver, still
-tunes it and sends the channel to the VTX.
+sent), rather than an internal VRX's own channel. The Box Pro+, which has a built-in analog receiver, still
+tunes it and sends the channel to the VTX (the Box Pro has no backpack).
 
 **VTX control requires this backpack:** to control the VTX from the goggles ("Send VTX"), flash the
 **HDZero Goggles Backpack x.x.x-graphn** release of
