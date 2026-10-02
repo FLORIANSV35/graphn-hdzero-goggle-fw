@@ -20,6 +20,39 @@ supported by HDZero**. Flashing it is done entirely **at your own risk**.
 
 ## Changes in this fork
 
+### What each device gets
+
+Compared with the upstream firmware this fork is based on (`LVTY-AI/hdzero-goggle`):
+
+| Addition | Goggle 1 | Goggle 2 | Box Pro |
+|---|---|---|---|
+| **WiFi Share** (hotspot, share window, power saving) | ✅ | ✅ | ✅ (hidden on a non-Pro Box Pro) |
+| **Web portal** (list, thumbnails, favourites, dates, playback, download, MP4) | ✅ | ✅ | ✅ |
+| **Light copy** + **Clear Light DVR** (Storage) | ✅ | ✅ | ✅ |
+| **Tools** page (Focus Chart, Frequency Chart, Temperature) | ✅ | ✅ | ✅ (1 probe instead of 3) |
+| **Frequency Chart** (analog A, B, E, F/I, R and digital D, J, O, Q bands) | ✅ | ✅ | ✅ |
+| **RSSI Scanner** + **Scan Page** | — | ✅ | ✅ |
+| **Themes** (13) + round colour dots + pill-style menu | ✅ | ✅ | — |
+| **VTX control** through the ELRS backpack (sending the channel) | ✅ | ✅ | ✅ |
+| **Dial with the Expansion module**: selects the channel and sends it to the VTX, without tuning an internal receiver or interrupting the DVR | ✅ | ✅ | — (tunes its internal receiver) |
+| **Playback**: action menu (Favorite, MP4, Remove, Info), sort by date, favourites folder, month history | ✅ | ✅ | ✅ |
+| **.ts to .mp4 conversion** (index at the start, `hvc1`) | ✅ | ✅ | ✅ |
+| **Startup** in 3 steps (Scan / Boot / Menu) | ✅ | ✅ | ✅ |
+| **Low SD space alert** (beep, status bar, OSD banner) | ✅ | ✅ | ✅ |
+| **Firmware update page**: the real script error | ✅ | ✅ | ✅ |
+| **SD package** (the test WAV moved out of the firmware) | ✅ | ✅ | ✅ |
+| **Tools chart images** per platform, lighter PNGs | 1080p | 1080p | 720p |
+| **Version** `YY.MM.NN-graphn` | ✅ | ✅ | ✅ |
+| UI fixes (Power, Record, Clock, Head Tracker, sidebar) | ✅ | ✅ | ✅ |
+| **Tested on real hardware** | no | **yes** | no |
+
+- Only the Goggle 2 has been tested on real hardware, including the portal and the light copy. The Goggle 1
+  and the Box Pro were only checked in the emulator, and the Goggle 1's Expansion dial is written but not
+  tried.
+- On the Box Pro the DVR records at 720p60, so all its clips go through the light copy; this has not been
+  tried.
+- VTX control needs the backpack described under [ELRS backpack dial control](#elrs-backpack-dial-control).
+
 ### Startup
 
 The old "Startup Scan" page is now just "Startup", with a clearer 3-step flow:
