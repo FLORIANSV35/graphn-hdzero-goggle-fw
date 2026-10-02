@@ -56,8 +56,8 @@ so the firmware hides the ELRS and WiFi pages on it.
 - On the Box Pro+ the DVR records at 720p60, so all its clips go through the light copy; this has not been
   tried.
 - VTX control needs the backpack described under [ELRS backpack dial control](#elrs-backpack-dial-control).
-- Whether a Box Pro is a Box Pro+ is read from a hardware pin at boot (the firmware calls it "PRO" /
-  "NOT PRO"); I could not check which of the two names each state matches on a real unit.
+- Which of the two a unit is, is read from a hardware pin at boot: the firmware logs "IS NOT PRO" for a
+  **Box Pro** and "IS PRO" for a **Box Pro+**. Only the Box Pro+ shows the ELRS and WiFi pages.
 
 ### Startup
 
