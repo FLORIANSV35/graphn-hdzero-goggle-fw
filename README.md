@@ -38,6 +38,11 @@ With the external Expansion analog bay active, the dial now sends channel change
 instead of the internal analog VRX. The current-channel indicator shows the last channel the backpack
 reported, rather than the internal VRX's own channel.
 
+**VTX control requires this backpack:** to control the VTX from the goggles, use the
+[FLORIANSV35/Backpack](https://github.com/FLORIANSV35/Backpack) firmware (a fork of the
+[ExpressLRS Backpack](https://github.com/ExpressLRS/Backpack)) on the backpack. The stock ExpressLRS
+Backpack is not enough for VTX control with this firmware.
+
 ### Theme system
 
 13 runtime-selectable UI themes (a "Theme" row in the Tools page): the original look, plus 12 dark, pill-style
