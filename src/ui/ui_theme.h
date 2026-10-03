@@ -32,7 +32,7 @@ typedef struct {
     uint32_t text_disable;
 } ui_theme_t;
 
-#define UI_THEME_DEFAULT 1 // "Braise"
+#define UI_THEME_DEFAULT 0 // "Original"
 
 extern const ui_theme_t *g_ui_theme;
 
