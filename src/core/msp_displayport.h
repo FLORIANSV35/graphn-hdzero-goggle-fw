@@ -73,6 +73,7 @@ extern uint8_t fontType;
 extern osd_resolution_t osd_resolution;
 extern uint8_t vtxVersion;
 extern uint8_t vtxType;
+extern uint8_t vtxTempC; // degrees C, 0 = not sent by the VTX
 extern uint8_t vtxFcLock;
 extern uint8_t cam_4_3;
 

@@ -681,6 +681,30 @@ static void osd_object_create_label(uint8_t fhd, lv_obj_t **obj, char *text, set
     }
 }
 
+// VTX temperature in degrees C, beside the VTX Temp icon. It follows the icon (position, hidden or
+// not) and only shows when the VTX really sends the temperature.
+static void osd_vtx_temp_txt_sync(void) {
+    lv_obj_t *icon = g_osd_hdzero.vtx_temp[is_fhd];
+    lv_obj_t *txt = g_osd_hdzero.vtx_temp_txt[is_fhd];
+    if (!icon || !txt)
+        return;
+
+    if (vtxTempC == 0 || lv_obj_has_flag(icon, LV_OBJ_FLAG_HIDDEN)) {
+        lv_obj_add_flag(txt, LV_OBJ_FLAG_HIDDEN);
+        return;
+    }
+
+    char buf[16];
+    snprintf(buf, sizeof(buf), "%d\xC2\xB0" "C", vtxTempC);
+    if (strcmp(lv_label_get_text(txt), buf) != 0)
+        lv_label_set_text(txt, buf);
+    lv_obj_set_style_text_color(txt, vtxTempC >= 75 ? lv_color_make(0xFF, 0x30, 0x30)
+                                     : vtxTempC >= 60 ? lv_color_make(0xFF, 0xA0, 0x20)
+                                                      : lv_color_make(0xFF, 0xFF, 0xFF), 0);
+    lv_obj_align_to(txt, icon, LV_ALIGN_OUT_RIGHT_MID, 4, 0);
+    lv_obj_clear_flag(txt, LV_OBJ_FLAG_HIDDEN);
+}
+
 void osd_show(bool show) {
     if (show)
         lv_obj_clear_flag(scr_osd[is_fhd], LV_OBJ_FLAG_HIDDEN);
@@ -965,6 +989,7 @@ void osd_hdzero_update(void) {
         lv_obj_clear_flag(g_osd_hdzero.vtx_temp[is_fhd], LV_OBJ_FLAG_HIDDEN);
     else
         lv_obj_add_flag(g_osd_hdzero.vtx_temp[is_fhd], LV_OBJ_FLAG_HIDDEN);
+    osd_vtx_temp_txt_sync();
 
     osd_channel_show(showRXOSD);
     osd_vlq_show(showRXOSD && source_is_hdzero);
@@ -1067,6 +1092,10 @@ static void embedded_osd_init(uint8_t fhd) {
 
     osd_resource_path(buf, "%s", is_fhd, VtxTemp1_bmp);
     osd_object_create_img(fhd, &g_osd_hdzero.vtx_temp[fhd], buf, &g_setting.osd.element[OSD_GOGGLE_VTX_TEMP].position, so);
+    g_osd_hdzero.vtx_temp_txt[fhd] = lv_label_create(so);
+    lv_label_set_text(g_osd_hdzero.vtx_temp_txt[fhd], "");
+    lv_obj_set_style_text_font(g_osd_hdzero.vtx_temp_txt[fhd], &lv_font_montserrat_26, 0);
+    lv_obj_add_flag(g_osd_hdzero.vtx_temp_txt[fhd], LV_OBJ_FLAG_HIDDEN);
 
     osd_resource_path(buf, "%s", is_fhd, lowBattery_gif);
     osd_object_create_gif(fhd, &g_osd_hdzero.battery_low[fhd], buf, &g_setting.osd.element[OSD_GOGGLE_BATTERY_LOW].position, so);
@@ -1137,6 +1166,7 @@ static void embedded_osd_init(uint8_t fhd) {
 void osd_update_element_positions() {
     osd_object_set_pos(is_fhd, g_osd_hdzero.topfan_speed[is_fhd], &g_setting.osd.element[OSD_GOGGLE_TOPFAN_SPEED].position);
     osd_object_set_pos(is_fhd, g_osd_hdzero.vtx_temp[is_fhd], &g_setting.osd.element[OSD_GOGGLE_VTX_TEMP].position);
+    osd_vtx_temp_txt_sync();
     osd_object_set_pos(is_fhd, g_osd_hdzero.battery_low[is_fhd], &g_setting.osd.element[OSD_GOGGLE_BATTERY_LOW].position);
     osd_object_set_pos(is_fhd, g_osd_hdzero.battery_voltage[is_fhd], &g_setting.osd.element[OSD_GOGGLE_BATTERY_VOLTAGE].position);
     osd_object_set_pos(is_fhd, g_osd_hdzero.vrx_temp[is_fhd], &g_setting.osd.element[OSD_GOGGLE_VRX_TEMP].position);

@@ -39,6 +39,7 @@ uint8_t vtxTempInfo = 0;     // bit[7]: temp enbale
 uint8_t fontType = 0; // bit[7:0]: ASCII ('0'~'9' & 'A'~'Z')
 uint8_t vtxVersion = 0;
 uint8_t vtxType = 0;
+uint8_t vtxTempC = 0;        // VTX temperature in degrees C (1..125); 0 = the VTX firmware does not send it
 uint8_t vtxFcLock = 0;
 // bit[0] msp_displayport_is_OK
 // bit[1] VTX_serial_is_OK
@@ -332,6 +333,12 @@ void vtxVersionDetect(uint8_t rData) {
     vtxVersion = rData;
 }
 
+// The graphn VTX firmware sends the real temperature (degrees C) in the byte that the official one sends as
+// 0. Only trust it when the VTX says its temperature sensor is on, and ignore anything out of range.
+void vtxTempCDetect(uint8_t rData) {
+    vtxTempC = ((vtxTempInfo & 0x80) && rData >= 1 && rData <= 125) ? rData : 0;
+}
+
 void vtxTypeDetect(uint8_t rData) {
     vtxType = rData;
 }
@@ -354,6 +361,7 @@ void parser_config(uint8_t *rx_buf) {
     vtxTempDetect(rx_buf[7]);
     fontTypeDetect(rx_buf[8]);
     vtxVersionDetect(rx_buf[9]);
+    vtxTempCDetect(rx_buf[9]);
     vtxTypeDetect(rx_buf[10]);
     vtxFcLockDetect(rx_buf[11]);
     vtxCamRatioDetect(rx_buf[12]);
