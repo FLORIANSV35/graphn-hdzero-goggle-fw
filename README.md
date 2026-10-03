@@ -44,6 +44,7 @@ so the firmware hides the ELRS and WiFi pages on it.
 | **Startup** in 3 steps (Scan / Boot / Menu) | ✅ | ✅ | ✅ | ✅ |
 | **Low SD space alert** (beep, status bar, OSD banner) | ✅ | ✅ | ✅ | ✅ |
 | **Firmware update page**: the real script error | ✅ | ✅ | ✅ | ✅ |
+| **Settings profile**: Reset / Save / Recall on the SD card | ✅ | ✅ | ✅ | ✅ |
 | **SD package** (the test WAV moved out of the firmware) | ✅ | ✅ | ✅ | ✅ |
 | **Tools chart images** per platform, lighter PNGs | 1080p | 1080p | 720p | 720p |
 | **Version** `YY.MM.NN-graphn` | ✅ | ✅ | ✅ | ✅ |
@@ -236,6 +237,22 @@ Optional files that are not bundled in the firmware, to keep the app partition s
 
 - `dvr_playback_volume_test.wav`: the 10 s sample played by Audio → DVR playback test. Without it that test
   plays nothing; the other audio tests are not affected.
+
+### Settings profile (Firmware page)
+
+The **Reset all settings** row of the Firmware page is now the **Settings** row. Click it, scroll to pick
+**Reset**, **Save**, **Recall** (or **Cancel**), click, then click again to confirm (scrolling cancels):
+
+- **Reset** erases all the settings, as before.
+- **Save** copies the settings (`setting.ini`) to the root of the SD card as `hdzero_settings_profile.ini`.
+  There is one profile; saving again replaces it.
+- **Recall** puts the saved settings back. The file is checked first (it must be there, and be of the same
+  settings version as the firmware), then the goggles ask to be repowered to apply it. Nothing is touched if
+  the check fails.
+
+The profile is a plain copy of the settings, **WiFi included**: the network names and passwords, and the
+SSH password, are readable in clear text in that file on the SD card, and recalling it on another goggle
+copies them there too. It is a text file, so it can also be edited or kept on a computer.
 
 ### Firmware update page
 

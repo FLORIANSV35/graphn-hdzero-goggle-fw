@@ -25,10 +25,12 @@
 #include "driver/i2c.h"
 #include "driver/uart.h"
 #include "lang/language.h"
+#include "platform/paths.h"
 #include "ui/page_common.h"
 #include "ui/ui_main_menu.h"
 #include "ui/ui_style.h"
 #include "util/filesystem.h"
+#include "util/sdcard.h"
 #include "util/strings.h"
 #include "util/system.h"
 
@@ -122,6 +124,17 @@ static lv_obj_t *btn_esp = NULL;
 static lv_obj_t *label_esp = NULL;
 static lv_obj_t *msgbox_update_complete = NULL;
 static lv_obj_t *msgbox_settings_reset = NULL;
+static lv_obj_t *msgbox_settings_recalled = NULL;
+static lv_obj_t *label_settings_choice = NULL;
+
+// The "Settings" row: Reset all settings, Save them to the SD card, or Recall the saved ones. One saved
+// profile, a plain copy of setting.ini (WiFi included) at the root of the SD card.
+#define SETTINGS_PROFILE_FILE "hdzero_settings_profile.ini"
+enum { SETTINGS_ACT_RESET = 0, SETTINGS_ACT_SAVE, SETTINGS_ACT_RECALL, SETTINGS_ACT_CANCEL, SETTINGS_ACT_COUNT };
+static bool settings_focused = false;    // the dial picks the action
+static bool settings_confirming = false; // the action is picked, waiting for the confirming click
+static int settings_action = SETTINGS_ACT_RESET;
+static char settings_result[96] = "";    // outcome of the last Save / Recall, shown until the dial moves
 static lv_obj_t *msgbox_release_notes = NULL;
 static lv_obj_t *label_note = NULL;
 static lv_obj_t *alert_img = NULL;
@@ -137,7 +150,6 @@ static fw_select_t *fw_select_current = &fw_select_vtx;
 static bool is_need_update_progress = false;
 static bool reboot_flag = false;
 static lv_obj_t *cur_ver_label;
-static int reset_all_settings_confirm = CONFIRMATION_UNCONFIRMED;
 static atomic_bool autoscan_filesystem = true; // was ATOMIC_VAR_INIT(true) — macro removed in C23 / modern GCC
 
 #undef RETURN_ON_ERROR
@@ -913,7 +925,8 @@ static lv_obj_t *page_version_create(lv_obj_t *parent, panel_arr_t *arr) {
     create_select_item(arr, cont);
     cur_ver_label = create_label_item(cont, _lang("Current Version"), 1, ROW_CUR_VERSION, 3);
 
-    btn_reset_all_settings = create_label_item(cont, _lang("Reset all settings"), 1, ROW_RESET_ALL_SETTINGS, 2);
+    btn_reset_all_settings = create_label_item(cont, _lang("Settings"), 1, ROW_RESET_ALL_SETTINGS, 1);
+    label_settings_choice = create_label_item(cont, "", 2, ROW_RESET_ALL_SETTINGS, 4);
 
     if (ROW_UPDATE_VTX > 0) {
         snprintf(buf, sizeof(buf), "%s VTX", _lang("Update"));
@@ -956,6 +969,12 @@ static lv_obj_t *page_version_create(lv_obj_t *parent, panel_arr_t *arr) {
              _lang("Please repower goggle now"));
     msgbox_settings_reset = create_msgbox_item(_lang("Settings reset"), buf);
     lv_obj_add_flag(msgbox_settings_reset, LV_OBJ_FLAG_HIDDEN);
+
+    snprintf(buf, sizeof(buf), "%s.\n%s.",
+             _lang("Saved settings have been recalled"),
+             _lang("Please repower goggle now"));
+    msgbox_settings_recalled = create_msgbox_item(_lang("Settings recalled"), buf);
+    lv_obj_add_flag(msgbox_settings_recalled, LV_OBJ_FLAG_HIDDEN);
 
     msgbox_release_notes = create_msgbox_item(_lang("Release Notes"), _lang("Empty"));
     lv_obj_add_flag(msgbox_release_notes, LV_OBJ_FLAG_HIDDEN);
@@ -1073,12 +1092,151 @@ static void elrs_version_timer(struct _lv_timer_t *timer) {
     lv_label_set_text(label_esp, label);
 }
 
-static void reset_all_settings_reset_label_text() {
-    lv_label_set_text(btn_reset_all_settings, _lang("Reset all settings"));
+static const char *settings_action_name(int action) {
+    switch (action) {
+    case SETTINGS_ACT_RESET:
+        return _lang("Reset");
+    case SETTINGS_ACT_SAVE:
+        return _lang("Save");
+    case SETTINGS_ACT_RECALL:
+        return _lang("Recall");
+    default:
+        return _lang("Cancel");
+    }
+}
+
+static void settings_row_refresh() {
+    char buf[160];
+
+    lv_label_set_text(btn_reset_all_settings, _lang("Settings"));
+    if (settings_focused && settings_confirming) {
+        snprintf(buf, sizeof(buf), "#FFFF00 %s: %s#", settings_action_name(settings_action),
+                 _lang("Click to confirm or Scroll to cancel"));
+    } else if (settings_focused) {
+        snprintf(buf, sizeof(buf), "#FFFF00 < %s >#", settings_action_name(settings_action));
+    } else if (settings_result[0]) {
+        snprintf(buf, sizeof(buf), "#FFFF00 %s#", settings_result);
+    } else {
+        buf[0] = '\0';
+    }
+    lv_label_set_text(label_settings_choice, buf);
+}
+
+static void settings_exit_focus() {
+    if (settings_focused)
+        app_state_push(APP_STATE_SUBMENU);
+    settings_focused = false;
+    settings_confirming = false;
+    settings_row_refresh();
+}
+
+// Copies a file; the destination is written whole then renamed, so a failure never leaves half a file.
+static bool settings_copy_file(const char *from, const char *to) {
+    char tmp[300];
+    char buf[1024];
+    size_t n;
+    bool ok = true;
+
+    snprintf(tmp, sizeof(tmp), "%s.tmp", to);
+    FILE *in = fopen(from, "rb");
+    if (!in)
+        return false;
+    FILE *out = fopen(tmp, "wb");
+    if (!out) {
+        fclose(in);
+        return false;
+    }
+    while ((n = fread(buf, 1, sizeof(buf), in)) > 0) {
+        if (fwrite(buf, 1, n, out) != n) {
+            ok = false;
+            break;
+        }
+    }
+    fflush(out);
+    fsync(fileno(out));
+    ok = (fclose(out) == 0) && ok;
+    fclose(in);
+    if (!ok || rename(tmp, to) != 0) {
+        remove(tmp);
+        return false;
+    }
+    return true;
+}
+
+static void settings_profile_path(char *path, size_t size) {
+    snprintf(path, size, "%s/%s", path_extsd(), SETTINGS_PROFILE_FILE);
+}
+
+static void settings_do_save() {
+    char path[256];
+
+    if (!sdcard_mounted()) {
+        snprintf(settings_result, sizeof(settings_result), "%s", _lang("No SD card"));
+        return;
+    }
+    settings_profile_path(path, sizeof(path));
+    if (settings_copy_file(SETTING_INI, path))
+        snprintf(settings_result, sizeof(settings_result), "%s", _lang("Settings saved"));
+    else
+        snprintf(settings_result, sizeof(settings_result), "%s", _lang("Could not write the file"));
+}
+
+static bool settings_do_recall() {
+    char path[256];
+
+    if (!sdcard_mounted()) {
+        snprintf(settings_result, sizeof(settings_result), "%s", _lang("No SD card"));
+        return false;
+    }
+    settings_profile_path(path, sizeof(path));
+    if (!fs_file_exists(path)) {
+        snprintf(settings_result, sizeof(settings_result), "%s", _lang("No saved settings on the SD card"));
+        return false;
+    }
+    // A file of another settings version would be wiped at the next boot (settings_init).
+    if (ini_getl("settings", "file_version", -1, path) != SETTING_INI_VERSION) {
+        snprintf(settings_result, sizeof(settings_result), "%s", _lang("Saved settings are from another firmware version"));
+        return false;
+    }
+    if (!settings_copy_file(path, SETTING_INI)) {
+        snprintf(settings_result, sizeof(settings_result), "%s", _lang("Could not write the file"));
+        return false;
+    }
+    return true;
+}
+
+static void settings_run_action() {
+    settings_result[0] = '\0';
+    switch (settings_action) {
+    case SETTINGS_ACT_RESET:
+        settings_exit_focus();
+        settings_reset();
+        lv_obj_clear_flag(msgbox_settings_reset, LV_OBJ_FLAG_HIDDEN);
+        app_state_push(APP_STATE_USER_INPUT_DISABLED);
+        return;
+    case SETTINGS_ACT_SAVE:
+        settings_do_save();
+        settings_exit_focus();
+        return;
+    case SETTINGS_ACT_RECALL:
+        if (settings_do_recall()) {
+            settings_exit_focus();
+            lv_obj_clear_flag(msgbox_settings_recalled, LV_OBJ_FLAG_HIDDEN);
+            app_state_push(APP_STATE_USER_INPUT_DISABLED);
+        } else {
+            settings_exit_focus();
+        }
+        return;
+    default:
+        settings_exit_focus();
+        return;
+    }
 }
 
 static void page_version_enter() {
     autoscan_filesystem = false;
+    settings_result[0] = '\0';
+    settings_row_refresh();
     version_update_title();
 
     if (ROW_UPDATE_ESP32 > 0) {
@@ -1091,6 +1249,8 @@ static void page_version_enter() {
 }
 
 static void page_version_exit() {
+    settings_result[0] = '\0';
+    settings_exit_focus();
     lv_obj_add_flag(msgbox_release_notes, LV_OBJ_FLAG_HIDDEN);
     page_version_fw_select_hide(&fw_select_vtx);
     page_version_fw_select_hide(&fw_select_goggle);
@@ -1101,9 +1261,19 @@ static void page_version_on_roller(uint8_t key) {
 
     version_update_title();
 
-    if (reset_all_settings_confirm == CONFIRMATION_CONFIRMED) {
-        reset_all_settings_reset_label_text();
-        reset_all_settings_confirm = CONFIRMATION_UNCONFIRMED;
+    if (settings_focused) { // the dial picks Reset / Save / Recall; scrolling also cancels the confirmation
+        if (settings_confirming)
+            settings_confirming = false;
+        else if (key == DIAL_KEY_UP) // the same direction as going down the rows: Reset, Save, Recall, Cancel
+            settings_action = (settings_action + 1) % SETTINGS_ACT_COUNT;
+        else
+            settings_action = (settings_action + SETTINGS_ACT_COUNT - 1) % SETTINGS_ACT_COUNT;
+        settings_row_refresh();
+        return;
+    }
+    if (settings_result[0]) {
+        settings_result[0] = '\0';
+        settings_row_refresh();
     }
 }
 
@@ -1139,16 +1309,21 @@ static void page_version_on_click(uint8_t key, int sel) {
             }
             fclose(fp);
         } else if (sel == ROW_RESET_ALL_SETTINGS) {
-            if (reset_all_settings_confirm) {
-                settings_reset();
-                reset_all_settings_reset_label_text();
-                lv_obj_clear_flag(msgbox_settings_reset, LV_OBJ_FLAG_HIDDEN);
-                app_state_push(APP_STATE_USER_INPUT_DISABLED);
+            if (!settings_focused) {
+                settings_result[0] = '\0';
+                settings_focused = true;
+                settings_confirming = false;
+                settings_action = SETTINGS_ACT_RESET;
+                app_state_push(APP_STATE_SUBMENU_ITEM_FOCUSED);
+            } else if (settings_action == SETTINGS_ACT_CANCEL) {
+                settings_exit_focus();
+            } else if (!settings_confirming) {
+                settings_confirming = true;
             } else {
-                snprintf(buf, sizeof(buf), "#FFFF00 %s#", _lang("Click to confirm or Scroll to cancel"));
-                lv_label_set_text(btn_reset_all_settings, buf);
-                reset_all_settings_confirm = CONFIRMATION_CONFIRMED;
+                settings_run_action();
+                return;
             }
+            settings_row_refresh();
         } else if (sel == ROW_UPDATE_VTX) {
             page_version_fw_scan_for_updates();
             snprintf(buf, sizeof(buf), "VTX %s", _lang("Firmware"));
