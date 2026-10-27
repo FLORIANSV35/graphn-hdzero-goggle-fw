@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <log/log.h>
@@ -1235,10 +1236,30 @@ typedef union _EFUSE {
 
 EFUSE_T efuse0, efuse1;
 
-void DM6302_EFUSE1(uint8_t SEL6302) {
+// EFUSE_RDY used to be polled forever; a chip that never clears it hung the boot.
+static bool efuse_wait_rdy(uint8_t SEL6302) {
+    uint32_t r0, r1, rdat_sel;
+    struct timespec t0, t;
+
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    for (;;) {
+        SPI_Read(0x3, 0x7D4, &r0, &r1);
+        rdat_sel = (SEL6302 == 1) ? r0 : r1;
+        if (!(rdat_sel & 1))
+            return true;
+        clock_gettime(CLOCK_MONOTONIC, &t);
+        if ((t.tv_sec - t0.tv_sec) * 1000 + (t.tv_nsec - t0.tv_nsec) / 1000000 > 300)
+            break;
+    }
+    LOGE("EFUSE %d: EFUSE_RDY never cleared", SEL6302);
+    return false;
+}
+
+// Returns 0 when the eFuse was read cleanly, 1 on timeout / implausible content.
+int DM6302_EFUSE1(uint8_t SEL6302) {
     int i, j;
     uint32_t r0, r1, rdat_sel;
-    int efuse_rdy = 1;
+    int err = 0;
 
     EFUSE_T *efuse_sel = (SEL6302 == 1) ? (&efuse0) : (&efuse1);
 
@@ -1257,12 +1278,8 @@ void DM6302_EFUSE1(uint8_t SEL6302) {
         SPI_Write(SEL6302, 0x3, 0x7D0, (j << 4) | 0x1);
 
         // while(EFUSE_RDY&1);
-        while (efuse_rdy) {
-            SPI_Read(0x3, 0x7D4, &r0, &r1);
-            rdat_sel = (SEL6302 == 1) ? r0 : r1;
-            efuse_rdy = rdat_sel & 1;
-        }
-        efuse_rdy = 1;
+        if (!efuse_wait_rdy(SEL6302))
+            err = 1;
 
         // efuse.data[0][j] = EFUSE_DAT;
         SPI_Read(0x3, 0x7D8, &r0, &r1);
@@ -1278,12 +1295,8 @@ void DM6302_EFUSE1(uint8_t SEL6302) {
         SPI_Write(SEL6302, 0x3, 0x7D0, (1 << 11) | (j << 4) | 0x1);
 
         // while(EFUSE_RDY&1);
-        while (efuse_rdy) {
-            SPI_Read(0x3, 0x7D4, &r0, &r1);
-            rdat_sel = (SEL6302 == 1) ? r0 : r1;
-            efuse_rdy = rdat_sel & 1;
-        }
-        efuse_rdy = 1;
+        if (!efuse_wait_rdy(SEL6302))
+            err = 1;
 
         // efuse.data[1][j] = EFUSE_DAT;
         SPI_Read(0x3, 0x7D8, &r0, &r1);
@@ -1292,6 +1305,14 @@ void DM6302_EFUSE1(uint8_t SEL6302) {
     }
 
     LOGI("EFUSE1 %d, s3, %d", SEL6302, efuse_sel->macro.m0.band_num);
+
+    // dat[] holds macros 0..EFUSE_NUM-1: macros 2..11 are the bands. A garbage
+    // band_num would index past it, so fall back to "no band" and flag it.
+    if (efuse_sel->macro.m0.band_num > EFUSE_NUM - 2) {
+        LOGE("EFUSE1 %d: invalid band_num %d", SEL6302, efuse_sel->macro.m0.band_num);
+        efuse_sel->macro.m0.band_num = 0;
+        err = 1;
+    }
 
     // for(i=2; i<efuse.macro.m0.band_num+2; i++) // read macro 2~11
     // efuse_sel->macro.m0.band_num = (efuse_sel->macro.m0.band_num >> 8) | (efuse_sel->macro.m0.band_num << 8);
@@ -1302,12 +1323,8 @@ void DM6302_EFUSE1(uint8_t SEL6302) {
             SPI_Write(SEL6302, 0x3, 0x7D0, (i << 11) | (j << 4) | 0x1);
 
             // while(EFUSE_RDY&1);
-            while (efuse_rdy) {
-                SPI_Read(0x3, 0x7D4, &r0, &r1);
-                rdat_sel = (SEL6302 == 1) ? r0 : r1;
-                efuse_rdy = rdat_sel & 1;
-            }
-            efuse_rdy = 1;
+            if (!efuse_wait_rdy(SEL6302))
+                err = 1;
 
             // efuse.data[i][j] = EFUSE_DAT;
             SPI_Read(0x3, 0x7D8, &r0, &r1);
@@ -1329,12 +1346,8 @@ void DM6302_EFUSE1(uint8_t SEL6302) {
             SPI_Write(SEL6302, 0x3, 0x7D0, (i << 11) | (j << 4) | 0x1);
 
             // while(EFUSE_RDY&1);
-            while (efuse_rdy) {
-                SPI_Read(0x3, 0x7D4, &r0, &r1);
-                rdat_sel = (SEL6302 == 1) ? r0 : r1;
-                efuse_rdy = rdat_sel & 1;
-            }
-            efuse_rdy = 1;
+            if (!efuse_wait_rdy(SEL6302))
+                err = 1;
 
             // efuse.data[i][j] = EFUSE_DAT;
             SPI_Read(0x3, 0x7D8, &r0, &r1);
@@ -1378,17 +1391,21 @@ void DM6302_EFUSE1(uint8_t SEL6302) {
 
     SPI_Write(SEL6302, 0x6, 0xF14, efuse_sel->macro.m1.bandgap);
     SPI_Write(SEL6302, 0x6, 0xF18, r1);
+
+    return err;
 }
 
-void DM6302_EFUSE2(uint8_t SEL6302) {
+// Returns 0 when a 5.8G calibration was applied to both receivers.
+int DM6302_EFUSE2(uint8_t SEL6302) {
     int i;
+    int rx1_ok = 0, rx2_ok = 0;
 
     EFUSE_T *efuse_sel = (SEL6302 == 1) ? (&efuse0) : (&efuse1);
 
     SPI_Write(SEL6302, 0x6, 0xFF0, 0x00000018);
     SPI_Write(SEL6302, 0x3, 0x3AC, 0x00000012);
-    for (i = 0; i < efuse_sel->macro.m0.band_num; i++) // find match macro 5.8G
-                                                       // for(i=0; i<10; i++) // find match macro 5.8G
+    for (i = 0; i < efuse_sel->macro.m0.band_num && i < EFUSE_NUM - 2; i++) // find match macro 5.8G
+                                                                            // for(i=0; i<10; i++) // find match macro 5.8G
     {
         // efuse_sel->macro.m2[i].rx1.freq_start = (efuse_sel->macro.m2[i].rx1.freq_start >> 8) | (efuse_sel->macro.m2[i].rx1.freq_start << 8);
         // efuse_sel->macro.m2[i].rx1.freq_stop = (efuse_sel->macro.m2[i].rx1.freq_stop >> 8) | (efuse_sel->macro.m2[i].rx1.freq_stop << 8);
@@ -1432,6 +1449,7 @@ void DM6302_EFUSE2(uint8_t SEL6302) {
             LOGI("iqmismatch[1]=%lx", efuse_sel->macro.m2[i].rx1.iqmismatch[1]);
             LOGI("iqmismatch[2]=%lx", efuse_sel->macro.m2[i].rx1.iqmismatch[2]);
             LOGI("im2=%lx", efuse_sel->macro.m2[i].rx1.im2);
+            rx1_ok = 1;
         }
 
         if (efuse_sel->macro.m2[i].rx2.freq_start >= 5000 && efuse_sel->macro.m2[i].rx2.freq_stop <= 6000) {
@@ -1467,8 +1485,15 @@ void DM6302_EFUSE2(uint8_t SEL6302) {
             LOGI("iqmismatch[1]=%lx", efuse_sel->macro.m2[i].rx2.iqmismatch[1]);
             LOGI("iqmismatch[2]=%lx", efuse_sel->macro.m2[i].rx2.iqmismatch[2]);
             LOGI("im2=%lx", efuse_sel->macro.m2[i].rx2.im2);
+            rx2_ok = 1;
         }
     }
+
+    if (!rx1_ok || !rx2_ok) {
+        LOGE("EFUSE2 %d: no 5.8G calibration (rx1=%d rx2=%d)", SEL6302, rx1_ok, rx2_ok);
+        return 1;
+    }
+    return 0;
 }
 
 void DM6302_DCOC(uint8_t SEL6302) {
@@ -1664,9 +1689,10 @@ void DM6302_DCOC(uint8_t SEL6302) {
     SPI_Write(SEL6302, 0x3, 0x4D4, 0x066727CC); // 0x066427CC
 }
 
-// DM6302 init
-int DM6302_init(uint8_t freq, uint8_t bw) {
+// One full DM6302 init pass. 0 = ok, nonzero = the pass is not trustworthy.
+static int DM6302_init_once(uint8_t freq, uint8_t bw) {
     int to_cnt = 0;
+    int efuse_err = 0;
     uint32_t r0 = 1, r1 = 1;
 
     while (r0) {
@@ -1691,11 +1717,14 @@ int DM6302_init(uint8_t freq, uint8_t bw) {
         }
     }
 
-    DM6302_EFUSE1(1);
+    efuse_err |= DM6302_EFUSE1(1);
     LOGI("EFUSE1 1 done");
 
-    DM6302_EFUSE1(2);
+    efuse_err |= DM6302_EFUSE1(2);
     LOGI("EFUSE1 2 done");
+
+    if (efuse_err) // calibration unreadable: no point configuring on top of it
+        return 2;
 
     DM6302_Init1(0, bw);
     LOGI("Init1 done");
@@ -1739,10 +1768,10 @@ int DM6302_init(uint8_t freq, uint8_t bw) {
     DM6302_Init14(0, bw);
     LOGI("Init14 done");
 
-    DM6302_EFUSE2(1);
+    efuse_err |= DM6302_EFUSE2(1);
     LOGI("EFUSE2 1 done");
 
-    DM6302_EFUSE2(2);
+    efuse_err |= DM6302_EFUSE2(2);
     LOGI("EFUSE2 2 done");
 
     DM6302_DCOC(1);
@@ -1754,7 +1783,32 @@ int DM6302_init(uint8_t freq, uint8_t bw) {
     DM6302_M0();
     LOGI("M0 done");
 
-    return 0;
+    return efuse_err ? 2 : 0;
+}
+
+// Init the radios, redoing the whole pass once if it came back suspect (the
+// chips are fully reset at the start of each pass). A second suspect pass is
+// kept: the radios are as configured as they ever were.
+int DM6302_init(uint8_t freq, uint8_t bw) {
+    int ret = DM6302_init_once(freq, bw);
+    if (ret) {
+        LOGE("DM6302 init suspect (%d), retrying", ret);
+        ret = DM6302_init_once(freq, bw);
+        if (ret)
+            LOGE("DM6302 init still suspect (%d)", ret);
+    }
+    return ret;
+}
+
+// Power up the HDZero receive chain: wait for both DM5680, set the bandwidth,
+// init the radios, release the baseband. Shared by every HDZero_open().
+int DM6302_start(uint8_t bw) {
+    DM5680_wait_ready(1500);
+    DM5680_SetBR(bw);
+    int ret = DM6302_init(0, bw);
+    DM5680_SetBB(1);
+    DM5680_log_health(ret ? "open-suspect" : "open");
+    return ret;
 }
 
 // DM6302 Gain table: 0~60

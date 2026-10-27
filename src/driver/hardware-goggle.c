@@ -739,9 +739,7 @@ void HDZero_open(int bw) {
 
     if (g_hw_stat.hdzero_open == 0) {
         g_hw_stat.hdz_bw = bw;
-        DM5680_SetBR(g_hw_stat.hdz_bw);
-        DM6302_init(0, g_hw_stat.hdz_bw);
-        DM5680_SetBB(1);
+        DM6302_start(g_hw_stat.hdz_bw);
         g_hw_stat.hdzero_open = 1;
         LOGI("HDZero: open");
     }
