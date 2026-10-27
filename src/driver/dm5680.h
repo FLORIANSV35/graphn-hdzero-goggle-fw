@@ -7,6 +7,7 @@ extern "C" {
 #include "dm6302.h"
 #include <pthread.h>
 #include <stdatomic.h>
+#include <stdbool.h>
 #include <stdint.h>
 
 typedef struct {
@@ -32,6 +33,10 @@ int uart_init();
 
 void DM5680_req_ver();
 void DM5680_get_ver(uint8_t sel, uint8_t *payload);
+uint32_t DM5680_reply_count(uint8_t sel);
+uint32_t DM5680_reply_age_ms(uint8_t sel);
+bool DM5680_wait_ready(uint32_t timeout_ms);
+void DM5680_log_health(const char *tag);
 
 void DM5680_SetFanSpeed(uint8_t sel, uint8_t speed); // sel=0/URART1/Right,sel=1/URART2/Left
 void DM5680_Beep(uint8_t on);

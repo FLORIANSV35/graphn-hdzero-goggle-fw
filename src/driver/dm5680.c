@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <sys/stat.h>
 #include <sys/select.h> // fd_set/select (transitive via sys/types on glibc; explicit for portability)
 #include <sys/types.h>
@@ -85,6 +86,17 @@ uint8_t uart_parse_core(uint8_t *buff, uint8_t *rptr, uint8_t *wptr, uint8_t *st
     return pkt_cnt;
 }
 
+// Reply tracking per DM5680 (index = rx_status index). Commands to the DM5680s
+// are fire-and-forget, so this is the only evidence that a chip is listening.
+static _Atomic uint32_t rx_reply_cnt[2];
+static _Atomic uint32_t rx_reply_ms[2]; // CLOCK_MONOTONIC ms of the last parsed packet
+
+static uint32_t mono_ms(void) {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (uint32_t)(ts.tv_sec * 1000u + ts.tv_nsec / 1000000u);
+}
+
 void uart_parse(uint8_t sel, uint8_t *state, uint8_t *len, uint8_t *payload, uint8_t *payload_ptr) {
     uint8_t *uart_buf = sel ? uart_buffer[1] : uart_buffer[0];
     uint8_t *uart_buf_rptr = sel ? &uart_rptr[1] : &uart_rptr[0];
@@ -96,6 +108,8 @@ void uart_parse(uint8_t sel, uint8_t *state, uint8_t *len, uint8_t *payload, uin
     pkt_cnt = uart_parse_core(uart_buf, uart_buf_rptr, uart_buf_wptr, state, len, payload, payload_ptr);
     ptr = payload;
     while (pkt_cnt--) {
+        rx_reply_cnt[sel ? 1 : 0]++;
+        rx_reply_ms[sel ? 1 : 0] = mono_ms();
         // LOGI("UART%d:Cmd=%x,len=%x,Value=%x",sel+1,ptr[1],ptr[0],ptr[2]);
         switch (ptr[1]) {
         case 0x01: // Ver
@@ -302,6 +316,57 @@ void DM5680_req_ver() {
 void DM5680_get_ver(uint8_t sel, uint8_t *payload) {
     rx_status_t *rx_status_ptr = sel ? (&rx_status[1]) : (&rx_status[0]);
     rx_status_ptr->rx_ver = payload[2];
+}
+
+uint32_t DM5680_reply_count(uint8_t sel) {
+    return rx_reply_cnt[sel ? 1 : 0];
+}
+
+// ms since the last packet from this DM5680, UINT32_MAX if none since boot
+uint32_t DM5680_reply_age_ms(uint8_t sel) {
+    if (rx_reply_cnt[sel ? 1 : 0] == 0)
+        return UINT32_MAX;
+    return mono_ms() - rx_reply_ms[sel ? 1 : 0];
+}
+
+// Ask both DM5680s for their version until each has answered since the call
+// (resending every 250 ms), or timeout_ms elapsed. Never blocks longer.
+bool DM5680_wait_ready(uint32_t timeout_ms) {
+    uint32_t base[2] = {DM5680_reply_count(0), DM5680_reply_count(1)};
+    uint32_t t0 = mono_ms();
+    uint32_t last_tx = 0;
+    bool first = true;
+
+    for (;;) {
+        bool ok0 = DM5680_reply_count(0) != base[0];
+        bool ok1 = DM5680_reply_count(1) != base[1];
+        uint32_t el = mono_ms() - t0;
+        if (ok0 && ok1) {
+            LOGI("DM5680 ready after %u ms", el);
+            return true;
+        }
+        if (el >= timeout_ms) {
+            LOGE("DM5680 not ready after %u ms (UART1 %s, UART2 %s)", el, ok0 ? "ok" : "SILENT", ok1 ? "ok" : "SILENT");
+            return false;
+        }
+        if (first || el - last_tx >= 250) {
+            DM5680_req_ver();
+            last_tx = el;
+            first = false;
+        }
+        usleep(10000);
+    }
+}
+
+void DM5680_log_health(const char *tag) {
+    for (int i = 0; i < 2; i++) {
+        uint32_t age = DM5680_reply_age_ms(i);
+        LOGI("RXHEALTH %s UART%d: ver=%x valid=%d rssi=%d/%d dlq=%d stat=%x replies=%u age=%d ms",
+             tag, i + 1, rx_status[i].rx_ver, rx_status[i].rx_valid,
+             rx_status[i].rx_rssi[0], rx_status[i].rx_rssi[1],
+             rx_status[i].rx_DLQ, rx_status[i].rx_Stat,
+             DM5680_reply_count(i), age == UINT32_MAX ? -1 : (int)age);
+    }
 }
 
 void DM5680_SetFanSpeed(uint8_t sel, uint8_t speed) {

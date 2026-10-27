@@ -132,6 +132,15 @@ static void check_source_signal(int vtmg_change) {
         DM5680_req_rssi();
         DM5680_req_vldflg();
         tune_channel_timer();
+
+        // Receiver health trace: every ~2 s for the first minute of HDZero
+        // viewing, then every ~30 s (see DM5680_log_health).
+        static uint32_t health_tick = 0, health_logs = 0;
+        if (++health_tick >= (health_logs < 30 ? 20u : 300u)) {
+            health_tick = 0;
+            health_logs++;
+            DM5680_log_health("run");
+        }
     } else if (g_source_info.source == SOURCE_AV_MODULE) {
 #if defined(HDZGOGGLE2) || defined(HDZBOXPRO)
         tune_channel_timer();
