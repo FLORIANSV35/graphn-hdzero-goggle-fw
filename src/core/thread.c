@@ -134,9 +134,10 @@ static void check_source_signal(int vtmg_change) {
         tune_channel_timer();
 
         // Receiver health trace: every ~2 s for the first minute of HDZero
-        // viewing, then every ~30 s (see DM5680_log_health).
+        // viewing, then every ~30 s, and every ~5 s while recording so the
+        // per-video log (see dvr.c) follows the whole clip.
         static uint32_t health_tick = 0, health_logs = 0;
-        if (++health_tick >= (health_logs < 30 ? 20u : 300u)) {
+        if (++health_tick >= (dvr_is_recording ? 50u : (health_logs < 30 ? 20u : 300u))) {
             health_tick = 0;
             health_logs++;
             DM5680_log_health("run");
@@ -300,7 +301,13 @@ static void *thread_peripheral(void *ptr) {
             record_vtmg_change |= HDMI_in_detect();
             g_source_info.hdmi_in_status = g_hw_stat.hdmiin_valid;
 
-            g_latency_locked = (bool)Get_VideoLatancy_status();
+            bool latency_locked = (bool)Get_VideoLatancy_status();
+            static bool latency_locked_prev = false;
+            if (latency_locked != latency_locked_prev) {
+                LOGI("video latency lock: %d", latency_locked);
+                latency_locked_prev = latency_locked;
+            }
+            g_latency_locked = latency_locked;
             check_source_signal(record_vtmg_change);
             record_vtmg_change = 0;
 
