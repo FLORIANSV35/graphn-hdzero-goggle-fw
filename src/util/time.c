@@ -18,10 +18,11 @@ uint32_t time_ms() {
 }
 
 uint32_t time_s() {
-    struct timeval tv_now;
-    gettimeofday(&tv_now, NULL);
+    // Monotonic: the wall clock is set after boot (RTC/NTP/user), which made this jump (even backwards)
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
 
-    const uint64_t now_s = tv_now.tv_sec;
+    const uint64_t now_s = ts.tv_sec;
 
     static uint64_t start_s = 0;
     if (start_s == 0) {

@@ -285,14 +285,17 @@ void fcTypeDetect(uint8_t *rData) {
 void lqDetect(uint8_t rData) {
     static uint8_t last_lq = 0;
 
-    if (rData != last_lq + 1)
+    if (rData != (uint8_t)(last_lq + 1)) // the counter wraps 255 -> 0, that is not an error
         lq_err_cnt += (rData - last_lq);
     lq_rcv_cnt++;
     last_lq = rData;
 }
 
 void lqStatistics() {
-    static uint16_t last_sec = 0;
+    // Must be as wide as time_s(): with a 16-bit copy, "now != last_sec" is always true once time_s()
+    // exceeds 65535 s (or after a wall-clock jump), the counters are cleared on every call and the link
+    // quality never gets above 0..1.
+    static uint32_t last_sec = 0;
     const uint32_t now = time_s();
 
     if (now != last_sec) {
