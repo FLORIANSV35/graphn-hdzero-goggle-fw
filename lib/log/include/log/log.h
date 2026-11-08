@@ -22,4 +22,9 @@ bool log_file_opened();
 bool log_file_open(const char *filename);
 void log_file_close();
 
+// Second log sink, open for the duration of one video: every line is also
+// appended to this file (capped, see log.c). Opening a new one closes the old.
+bool log_video_open(const char *filename);
+void log_video_close();
+
 #endif

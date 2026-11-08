@@ -14,6 +14,12 @@
 static int fd_log_file = -1;
 static char offline_buffer[1 * 1024 * 1024];
 static size_t offline_offset = 0;
+
+#define VIDEO_LOG_MAX (8 * 1024 * 1024) // per video, then lines are dropped
+static int fd_video_log = -1;
+static char video_buffer[256 * 1024];
+static size_t video_offset = 0;
+static size_t video_written = 0;
 static atomic_bool log_mutex_init = false; // was ATOMIC_VAR_INIT(false) — macro removed in C23 / modern GCC
 static pthread_mutex_t log_mutex;
 
@@ -37,6 +43,12 @@ static void *log_sync_thread(void *arg) {
         if (fd_log_file >= 0 && offline_offset > 0) {
             write(fd_log_file, offline_buffer, offline_offset);
             offline_offset = 0;
+        }
+
+        if (fd_video_log >= 0 && video_offset > 0) {
+            write(fd_video_log, video_buffer, video_offset);
+            video_written += video_offset;
+            video_offset = 0;
         }
 
         pthread_mutex_unlock(&log_mutex);
@@ -114,6 +126,17 @@ int log_printf(const char *file, const char *func, int line, const int level, co
                                   buffer);
     }
 
+    // Per-video copy; a line that does not fit is dropped (the buffer is
+    // flushed every second)
+    if (fd_video_log >= 0) {
+        size_t len = strnlen(buffer, sizeof(buffer));
+        if (video_written + video_offset + len < VIDEO_LOG_MAX &&
+            video_offset + len < sizeof(video_buffer)) {
+            memcpy(&video_buffer[video_offset], buffer, len);
+            video_offset += len;
+        }
+    }
+
     pthread_mutex_unlock(&log_mutex);
 
     return ret;
@@ -152,6 +175,39 @@ void log_file_close() {
     if (fd_log_file >= 0) {
         close(fd_log_file);
         fd_log_file = -1;
+    }
+
+    pthread_mutex_unlock(&log_mutex);
+}
+
+bool log_video_open(const char *filename) {
+    bool retval = false;
+
+    log_video_close();
+
+    pthread_mutex_lock(&log_mutex);
+
+    fd_video_log = open(filename, O_WRONLY | O_CREAT | O_APPEND, 0666);
+    if (fd_video_log >= 0) {
+        video_offset = 0;
+        video_written = 0;
+        retval = true;
+    }
+
+    pthread_mutex_unlock(&log_mutex);
+
+    return retval;
+}
+
+void log_video_close() {
+    pthread_mutex_lock(&log_mutex);
+
+    if (fd_video_log >= 0) {
+        if (video_offset > 0)
+            write(fd_video_log, video_buffer, video_offset);
+        video_offset = 0;
+        close(fd_video_log);
+        fd_video_log = -1;
     }
 
     pthread_mutex_unlock(&log_mutex);

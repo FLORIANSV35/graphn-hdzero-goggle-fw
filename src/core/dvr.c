@@ -1,11 +1,13 @@
 #include "dvr.h"
 
 #include <ctype.h>
+#include <dirent.h>
 #include <pthread.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -16,6 +18,7 @@
 
 #include "core/msp_displayport.h"
 #include "core/settings.h"
+#include "driver/dm5680.h"
 #include "driver/hardware.h"
 #include "record/record_definitions.h"
 #include "ui/page_common.h"
@@ -27,6 +30,7 @@ bool record_pending = false;
 
 static time_t dvr_recording_start = 0;
 static pthread_mutex_t dvr_mutex;
+static void dvr_video_log_stop(void);
 static bool live_audio_line_out_enabled = false;
 static bool live_audio_muted_for_dvr = false;
 
@@ -91,6 +95,7 @@ void dvr_update_status() {
             system_script(REC_STOP);
             record_pending = false;
             sleep(2);                         // wait for record process
+            dvr_video_log_stop();
         }
     }
     pthread_mutex_unlock(&dvr_mutex);
@@ -575,6 +580,99 @@ static void dvr_update_record_conf() {
                 g_setting.record.format_ts, want_type, got_type, type_retries);
 }
 
+///////////////////////////////////////////////////////////////////
+// One log file per video: /mnt/extsd/log/video/<clip name>.log holds every log
+// line written while that clip was recording, so a problem seen in a clip can
+// be read back after the next boot (HDZGOGGLE.log only keeps the last boot).
+#define VIDEO_LOG_DIR  "/mnt/extsd/log/video"
+#define VIDEO_LOG_KEEP 40 // oldest files are removed beyond this
+
+static void video_log_prune(void) {
+    static char names[VIDEO_LOG_KEEP + 64][40];
+    int n = 0;
+    DIR *d = opendir(VIDEO_LOG_DIR);
+    if (d == NULL)
+        return;
+    struct dirent *e;
+    while ((e = readdir(d)) != NULL && n < (int)(sizeof(names) / sizeof(names[0]))) {
+        if (e->d_name[0] != '.' && strlen(e->d_name) < sizeof(names[0]))
+            strcpy(names[n++], e->d_name);
+    }
+    closedir(d);
+
+    // names start with the date and time: lexical order is age order
+    for (int i = 0; i < n; i++)
+        for (int j = i + 1; j < n; j++)
+            if (strcmp(names[j], names[i]) < 0) {
+                char t[40];
+                strcpy(t, names[i]);
+                strcpy(names[i], names[j]);
+                strcpy(names[j], t);
+            }
+    for (int i = 0; i < n - VIDEO_LOG_KEEP; i++) {
+        char path[96];
+        snprintf(path, sizeof(path), VIDEO_LOG_DIR "/%s", names[i]);
+        unlink(path);
+    }
+}
+
+// Name of the clip being written: the most recently modified media file of
+// the DCIM folder (the record process created it a moment ago), else the
+// current time in the clips' own format.
+static void video_log_clip_name(char *out, size_t len) {
+    time_t newest = 0;
+    out[0] = 0;
+
+    DIR *d = opendir("/mnt/extsd/DCIM/100HDZRO");
+    if (d != NULL) {
+        struct dirent *e;
+        while ((e = readdir(d)) != NULL) {
+            const char *dot = strrchr(e->d_name, '.');
+            if (dot == NULL || strcasecmp(dot, ".jpg") == 0 || e->d_name[0] == '.')
+                continue;
+            char path[300];
+            struct stat st;
+            snprintf(path, sizeof(path), "/mnt/extsd/DCIM/100HDZRO/%s", e->d_name);
+            if (stat(path, &st) == 0 && st.st_mtime > newest &&
+                dot - e->d_name < (int)len) {
+                newest = st.st_mtime;
+                snprintf(out, len, "%.*s", (int)(dot - e->d_name), e->d_name);
+            }
+        }
+        closedir(d);
+    }
+
+    if (out[0] == 0 || difftime(time(NULL), newest) > 10) {
+        time_t now = time(NULL);
+        strftime(out, len, "%Y%m%d-%H%M%S", localtime(&now));
+    }
+}
+
+static void dvr_video_log_start(void) {
+    char clip[64], path[128];
+
+    mkdir("/mnt/extsd/log", 0777);
+    mkdir(VIDEO_LOG_DIR, 0777);
+    video_log_prune();
+
+    video_log_clip_name(clip, sizeof(clip));
+    snprintf(path, sizeof(path), VIDEO_LOG_DIR "/%s.log", clip);
+    if (log_video_open(path)) {
+        LOGI("video log start: %s source=%d hdz_bw=%d band=%d ch=%d", clip,
+             g_source_info.source, g_setting.source.hdzero_bw,
+             g_setting.source.hdzero_band, g_setting.scan.channel);
+        if (g_source_info.source == SOURCE_HDZERO)
+            DM5680_log_health("rec-start");
+    }
+}
+
+static void dvr_video_log_stop(void) {
+    if (g_source_info.source == SOURCE_HDZERO)
+        DM5680_log_health("rec-stop");
+    LOGI("video log stop");
+    log_video_close();
+}
+
 bool dvr_space_allows_start(void) {
     return g_setting.record.rolling || !sdcard_is_full();
 }
@@ -631,6 +729,7 @@ void dvr_cmd(osd_dvr_cmd_t cmd) {
                 system_script(REC_START);
                 dvr_recording_start = time(NULL);
                 sleep(2); // wait for record process
+                dvr_video_log_start();
             } else {
                 record_pending = true;
             }
@@ -641,6 +740,7 @@ void dvr_cmd(osd_dvr_cmd_t cmd) {
             dvr_dbg_log("stop_request cmd=%d", cmd);
             system_script(REC_STOP);
             sleep(2); // wait for record process
+            dvr_video_log_stop();
         }
     }
 
