@@ -20,7 +20,9 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <log/log.h>
@@ -48,6 +50,20 @@ typedef struct {
 } emu_port_t;
 
 static emu_port_t g_ports[2];
+
+// Test hooks (emulator only, driven by the environment):
+//   HDZ_EMU_RX_SILENT_MS=N  the mock on UART1 answers nothing for the first N ms
+//                           (cold-start "receiver not listening" case)
+//   HDZ_EMU_FUZZ=1          also send malformed/random frames on both UARTs
+//   HDZ_EMU_SEED=S          seed of the fuzzer (default 1)
+static uint32_t g_silent_ms = 0;
+static struct timespec g_t0;
+
+static uint32_t emu_elapsed_ms(void) {
+    struct timespec t;
+    clock_gettime(CLOCK_MONOTONIC, &t);
+    return (uint32_t)((t.tv_sec - g_t0.tv_sec) * 1000 + (t.tv_nsec - g_t0.tv_nsec) / 1000000);
+}
 
 // Frame a response payload (CMD + data) as 0xCC 0x33 LEN <payload> and send it.
 static void send_resp(int fd, const uint8_t *payload, uint8_t len) {
@@ -126,7 +142,8 @@ static void *port_thread(void *arg) {
                 state = remaining ? 3 : 0;
                 break;
             case 3: // CMD
-                handle_cmd(p->fd, b);
+                if (!(p == &g_ports[0] && emu_elapsed_ms() < g_silent_ms))
+                    handle_cmd(p->fd, b);
                 remaining--;
                 state = remaining ? 4 : 0;
                 break;
@@ -140,8 +157,64 @@ static void *port_thread(void *arg) {
     return NULL;
 }
 
+// Malformed traffic: junk bytes, truncated frames, wrong lengths, OSD (0x15)
+// frames with random MSP content. The app must neither crash nor hang.
+static void *fuzz_thread(void *arg) {
+    (void)arg;
+    uint8_t frame[300];
+
+    for (;;) {
+        int port = rand() & 1;
+        int fd = g_ports[port].fd;
+        size_t n = 0;
+
+        switch (rand() % 4) {
+        case 0: // pure junk
+            n = 1 + rand() % 64;
+            for (size_t i = 0; i < n; i++)
+                frame[i] = (uint8_t)rand();
+            break;
+        case 1: // framed, random command, random declared length vs real length
+            frame[0] = 0xCC;
+            frame[1] = 0x33;
+            frame[2] = (uint8_t)rand();
+            n = 3 + rand() % 40;
+            for (size_t i = 3; i < n; i++)
+                frame[i] = (uint8_t)rand();
+            break;
+        case 2: // OSD frame carrying a random MSP DisplayPort-looking payload
+            frame[0] = 0xCC;
+            frame[1] = 0x33;
+            n = 4 + rand() % 120;
+            frame[2] = (uint8_t)(n - 3);
+            frame[3] = 0x15;
+            for (size_t i = 4; i < n; i++)
+                frame[i] = (rand() % 3) ? (uint8_t)rand() : "$MD<>"[rand() % 5];
+            break;
+        default: // truncated valid-looking RSSI / vtx frames
+            frame[0] = 0xCC;
+            frame[1] = 0x33;
+            frame[2] = (uint8_t)(rand() % 8);
+            frame[3] = (uint8_t)(0x11 + rand() % 4);
+            n = 3 + rand() % 6;
+            for (size_t i = 4; i < n; i++)
+                frame[i] = (uint8_t)rand();
+            break;
+        }
+        ssize_t rc = write(fd, frame, n);
+        (void)rc;
+        usleep(1000 + rand() % 9000);
+    }
+    return NULL;
+}
+
 void dm5680_emu_start(void) {
     int started = 0;
+    clock_gettime(CLOCK_MONOTONIC, &g_t0);
+    const char *e = getenv("HDZ_EMU_RX_SILENT_MS");
+    g_silent_ms = e ? (uint32_t)atoi(e) : 0;
+    if (g_silent_ms)
+        LOGI("dm5680_emu: UART1 stays silent for %u ms", g_silent_ms);
     for (int i = 0; i < 2; i++) {
         int fd = uart_emu_peer_fd(kPorts[i]);
         if (fd < 0)
@@ -149,6 +222,16 @@ void dm5680_emu_start(void) {
         g_ports[i].fd = fd;
         if (pthread_create(&g_ports[i].tid, NULL, port_thread, &g_ports[i]) == 0)
             started++;
+    }
+    const char *fz = getenv("HDZ_EMU_FUZZ");
+    if (fz && atoi(fz) && started) {
+        const char *sd = getenv("HDZ_EMU_SEED");
+        srand(sd ? (unsigned)atoi(sd) : 1u);
+        pthread_t t;
+        if (pthread_create(&t, NULL, fuzz_thread, NULL) == 0) {
+            pthread_detach(t);
+            LOGI("dm5680_emu: fuzzer running");
+        }
     }
     LOGI("dm5680_emu: mock receiver attached on %d UART(s) (version, valid channel, RSSI)", started);
 }
