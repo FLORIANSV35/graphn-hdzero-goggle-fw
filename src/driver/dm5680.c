@@ -47,6 +47,9 @@ pthread_mutex_t cmd_to5680_mutex;
 static struct timeval short_click_timeout;
 struct timeval *wait_timeout = NULL;
 
+// payload_ptr is a uint8_t, so 256 keeps every index in bounds
+#define UART_PAYLOAD_SIZE 256
+
 uint8_t uart_parse_core(uint8_t *buff, uint8_t *rptr, uint8_t *wptr, uint8_t *state, uint8_t *len, uint8_t *payload, uint8_t *payload_ptr) {
     uint8_t pkt_cnt = 0;
     while (*rptr != *wptr) {
@@ -65,6 +68,13 @@ uint8_t uart_parse_core(uint8_t *buff, uint8_t *rptr, uint8_t *wptr, uint8_t *st
 
         case 2:
             *len = buff[*rptr];
+            // A packet is LEN + LEN bytes in payload[] (UART_PAYLOAD_SIZE). A zero
+            // LEN (it would count down to 255) or one that does not fit is line
+            // noise: drop it and wait for the next header.
+            if (*len == 0 || *payload_ptr + *len + 1 > UART_PAYLOAD_SIZE) {
+                *state = 0;
+                break;
+            }
             payload[*payload_ptr] = *len;
             (*payload_ptr)++;
             *state = 3;
@@ -84,6 +94,28 @@ uint8_t uart_parse_core(uint8_t *buff, uint8_t *rptr, uint8_t *wptr, uint8_t *st
         (*rptr)++;
     }
     return pkt_cnt;
+}
+
+// ptr[0] is LEN (CMD + data bytes) and ptr[1] the CMD. The handlers read fixed
+// offsets, so a packet shorter than its command needs (line noise) must not
+// reach them: they would read past the end of the packet, even of payload[].
+static bool uart_pkt_complete(const uint8_t *ptr) {
+    uint8_t need = 0;
+    switch (ptr[1]) {
+    case 0x01: // ver
+    case 0x11: // valid channel
+    case 0x19: // reg value
+    case 0x20: // right button
+        need = 2;
+        break;
+    case 0x12: // rssi0 rssi1 DLQ Stat crc
+        need = 6;
+        break;
+    case 0x14: // vtx_type vtx_ver vtx_stat crc
+        need = 5;
+        break;
+    }
+    return ptr[0] >= need;
 }
 
 // Reply tracking per DM5680 (index = rx_status index). Commands to the DM5680s
@@ -111,7 +143,7 @@ void uart_parse(uint8_t sel, uint8_t *state, uint8_t *len, uint8_t *payload, uin
         rx_reply_cnt[sel ? 1 : 0]++;
         rx_reply_ms[sel ? 1 : 0] = mono_ms();
         // LOGI("UART%d:Cmd=%x,len=%x,Value=%x",sel+1,ptr[1],ptr[0],ptr[2]);
-        switch (ptr[1]) {
+        switch (uart_pkt_complete(ptr) ? ptr[1] : -1) {
         case 0x01: // Ver
             DM5680_get_ver(sel, ptr);
             break;
@@ -175,7 +207,7 @@ static void *pthread_recv_dm5680l(void *arg) {
     uint8_t buffer[128];
     fd_set rd;
 
-    uint8_t state, len8, payload_ptr, payload[128];
+    uint8_t state, len8, payload_ptr, payload[UART_PAYLOAD_SIZE];
 
     // Init UART buffers
     uart_rptr[0] = 0;
@@ -213,7 +245,7 @@ static void *pthread_recv_dm5680r(void *arg) {
     uint8_t buffer[128];
     fd_set rd;
 
-    uint8_t state, len8, payload_ptr, payload[128];
+    uint8_t state, len8, payload_ptr, payload[UART_PAYLOAD_SIZE];
 
     // Init UART buffers
     uart_rptr[1] = 0;
