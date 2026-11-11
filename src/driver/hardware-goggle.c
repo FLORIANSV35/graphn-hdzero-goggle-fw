@@ -1310,6 +1310,8 @@ void Analog_Module_Power(bool ForceSet) {
     }
 }
 
+void Analog_Module_Power_Prepare(void) {}
+
 int Get_VideoLatancy_status() // ret: 0=unlocked, 1=locked
 {
     uint8_t rdat = 0;

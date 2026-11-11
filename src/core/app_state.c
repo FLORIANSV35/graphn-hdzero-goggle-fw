@@ -3,6 +3,7 @@
 #include <log/log.h>
 #include <minIni.h>
 #include <stdlib.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "core/dvr.h"
@@ -94,6 +95,11 @@ void app_exit_menu() {
 }
 
 void app_switch_to_analog(bool is_av_in) {
+    struct timespec t0;
+    clock_gettime(CLOCK_MONOTONIC, &t0);
+    if (!is_av_in)
+        Analog_Module_Power_Prepare();
+
     dvr_update_vi_conf(VR_720P50);
     osd_fhd(0);
     osd_show(true);
@@ -155,6 +161,11 @@ void app_switch_to_analog(bool is_av_in) {
 
     sleep(1);
     system_script(REC_STOP_LIVE);
+
+    struct timespec t1;
+    clock_gettime(CLOCK_MONOTONIC, &t1);
+    LOGI("app_switch_to_analog(%d) took %ld ms", is_av_in,
+         (long)((t1.tv_sec - t0.tv_sec) * 1000 + (t1.tv_nsec - t0.tv_nsec) / 1000000));
 }
 
 void app_switch_to_hdmi_in() {

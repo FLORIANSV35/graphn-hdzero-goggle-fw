@@ -1181,18 +1181,25 @@ void Set_HT_dat(uint16_t ch0, uint16_t ch1, uint16_t ch2) {
     I2C_Write(ADDR_FPGA, 0x77, (ch2 >> 8) & 0xff);
 }
 
+// Power state 0 = expansion module ON, 1 = OFF (see DM5680_ExternalAnalog_Power).
+static bool Analog_Module_Power_State = 0;
+static bool Analog_Module_Power_State_Last = 0;
+
+// Expansion module is the analog receiver in use: Expansion selected and not Dual
+// (Dual always uses the Built-in receiver).
+static bool analog_module_is_external(void) {
+    return g_setting.source.analog_module == SETTING_SOURCES_ANALOG_MODULE_EXTERNAL &&
+           !g_setting.source.auto_protocol_detect;
+}
+
 void Analog_Module_Power(bool ForceSet) {
     // Batch 2 goggles only
     if (getHwRevision() >= HW_REV_2) {
-        static bool Analog_Module_Power_State = 0;
-        static bool Analog_Module_Power_State_Last = 0;
-        // Power state 0 = expansion module ON, 1 = OFF (see DM5680_ExternalAnalog_Power).
         // Both modes require Expansion to be selected; with Built-in selected the
         // internal rtc6715 is used instead, so the expansion module stays off.
         // Dual (auto_protocol_detect) always uses the Built-in receiver, so the
         // expansion module stays off there too regardless of the setting.
-        if (g_setting.source.analog_module != SETTING_SOURCES_ANALOG_MODULE_EXTERNAL ||
-            g_setting.source.auto_protocol_detect) {
+        if (!analog_module_is_external()) {
             Analog_Module_Power_State = 1;
         } else if (g_setting.power.power_ana == 0) {
             // "On": power the expansion module as soon as Expansion is selected
@@ -1205,6 +1212,20 @@ void Analog_Module_Power(bool ForceSet) {
         }
         if ((Analog_Module_Power_State_Last != Analog_Module_Power_State) || (ForceSet == 1)) {
             Analog_Module_Power_State_Last = Analog_Module_Power_State;
+            DM5680_ExternalAnalog_Power(Analog_Module_Power_State);
+        }
+    }
+}
+
+// Called as the switch to the analog Module source starts, so the expansion module
+// boots while the display, OSD and recorder are being switched. Analog_Module_Power()
+// otherwise only powers it once the source is marked active, after the whole switch.
+void Analog_Module_Power_Prepare(void) {
+    if (getHwRevision() >= HW_REV_2 && analog_module_is_external()) {
+        Analog_Module_Power_State = 0;
+        if (Analog_Module_Power_State_Last != Analog_Module_Power_State) {
+            Analog_Module_Power_State_Last = Analog_Module_Power_State;
+            LOGI("expansion module power on (switch start)");
             DM5680_ExternalAnalog_Power(Analog_Module_Power_State);
         }
     }
