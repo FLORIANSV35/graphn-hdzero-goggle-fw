@@ -19,6 +19,16 @@ static char console_buffer[64 * 1024];
 static size_t console_offset;
 static size_t dropped_file, dropped_console;
 static atomic_bool file_opened;
+
+// Optional second sink: one log per video. Same rules as the main file: the
+// producers only copy into the buffer under log_mutex, storage is written under
+// file_mutex only (never under log_mutex).
+#define VIDEO_LOG_MAX (8 * 1024 * 1024) // per video, then lines are dropped
+static int fd_video_log = -1;           // file_mutex
+static bool video_active;               // log_mutex
+static char video_buffer[256 * 1024];   // log_mutex
+static size_t video_offset;             // log_mutex
+static size_t video_written;            // log_mutex (bytes already taken for writing)
 static pthread_once_t log_once = PTHREAD_ONCE_INIT;
 static bool worker_started;
 static pthread_mutex_t log_mutex = PTHREAD_MUTEX_INITIALIZER;
@@ -62,6 +72,22 @@ static size_t log_take(char *dst, char *src, size_t *offset, size_t *dropped) {
     return bytes;
 }
 
+// Caller holds file_mutex. Writes what the producers queued for the video log.
+static void log_video_flush(void) {
+    static char video_pending[sizeof(video_buffer)];
+
+    if (fd_video_log < 0)
+        return;
+    pthread_mutex_lock(&log_mutex);
+    size_t bytes = video_offset;
+    memcpy(video_pending, video_buffer, bytes);
+    video_offset = 0;
+    video_written += bytes;
+    pthread_mutex_unlock(&log_mutex);
+    if (bytes)
+        log_write(fd_video_log, video_pending, bytes);
+}
+
 static void *log_sync_thread(void *arg) {
     static char pending[sizeof(offline_buffer) + 128];
     static char console[sizeof(console_buffer) + 128];
@@ -86,6 +112,7 @@ static void *log_sync_thread(void *arg) {
             dropped_file += lost;
             pthread_mutex_unlock(&log_mutex);
         }
+        log_video_flush();
         pthread_mutex_unlock(&file_mutex);
         sleep(1);
     }
@@ -150,6 +177,12 @@ int log_printf(const char *file, const char *func, int line, const int level, co
     pthread_mutex_lock(&log_mutex);
     log_enqueue(offline_buffer, sizeof(offline_buffer), &offline_offset, &dropped_file, buffer, length);
     log_enqueue(console_buffer, sizeof(console_buffer), &console_offset, &dropped_console, buffer, length);
+    // Per-video copy; a line that does not fit is dropped (flushed every second)
+    if (video_active && video_written + video_offset + length < VIDEO_LOG_MAX &&
+        video_offset + length < sizeof(video_buffer)) {
+        memcpy(&video_buffer[video_offset], buffer, length);
+        video_offset += length;
+    }
 
     pthread_mutex_unlock(&log_mutex);
 
@@ -186,4 +219,36 @@ void log_file_close() {
     }
     atomic_store(&file_opened, false);
     pthread_mutex_unlock(&file_mutex);
+}
+
+void log_video_close() {
+    pthread_mutex_lock(&file_mutex);
+    if (fd_video_log >= 0) {
+        pthread_mutex_lock(&log_mutex);
+        video_active = false;
+        pthread_mutex_unlock(&log_mutex);
+        log_video_flush();
+        close(fd_video_log);
+        fd_video_log = -1;
+    }
+    pthread_mutex_unlock(&file_mutex);
+}
+
+bool log_video_open(const char *filename) {
+    pthread_once(&log_once, log_init_thread);
+    if (!worker_started)
+        return false;
+    log_video_close();
+    int fd = open(filename, O_WRONLY | O_CREAT | O_APPEND, 0666);
+    if (fd < 0)
+        return false;
+    pthread_mutex_lock(&file_mutex);
+    pthread_mutex_lock(&log_mutex);
+    video_offset = 0;
+    video_written = 0;
+    video_active = true;
+    pthread_mutex_unlock(&log_mutex);
+    fd_video_log = fd;
+    pthread_mutex_unlock(&file_mutex);
+    return true;
 }
